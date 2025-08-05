@@ -9,7 +9,16 @@ type Props = {
   maxNodes?: number;
 };
 
-type FlatNode = { id: string; parentId?: string; label: string };
+type FlatNode = { id: string; parentId?: string; key?: string; kind: "object" | "array" | "leaf"; valuePreview?: string };
+
+function previewValue(val: unknown, max = 80): string {
+  if (val === null) return "null";
+  const t = Object.prototype.toString.call(val).slice(8, -1);
+  if (t === "String") return JSON.stringify(val).slice(0, max);
+  if (t === "Number" || t === "Boolean") return String(val);
+  if (t === "Undefined") return "undefined";
+  return "";
+}
 
 function flattenJsonToNodes(value: unknown, rootId = "root", maxNodes = 500): FlatNode[] {
   const out: FlatNode[] = [];
@@ -21,33 +30,33 @@ function flattenJsonToNodes(value: unknown, rootId = "root", maxNodes = 500): Fl
     count++;
   };
 
-  const walk = (val: unknown, id: string, parentId?: string) => {
+  const walk = (val: unknown, id: string, parentId?: string, key?: string) => {
     if (count >= maxNodes) return;
-    const type = Object.prototype.toString.call(val).slice(8, -1);
-    let label = "";
-    if (val === null) label = "null";
-    else if (type === "Object") label = "{ }";
-    else if (type === "Array") label = "[ ]";
-    else if (type === "String") label = JSON.stringify(val).slice(0, 80);
-    else label = String(val).slice(0, 80);
-    push({ id, parentId, label });
+
+    let kind: FlatNode["kind"] = "leaf";
+    if (val && typeof val === "object") {
+      kind = Array.isArray(val) ? "array" : "object";
+    }
+
+    const vprev = kind === "leaf" ? previewValue(val) : undefined;
+    push({ id, parentId, key, kind, valuePreview: vprev });
 
     if (val && typeof val === "object") {
       if (Array.isArray(val)) {
         for (let i = 0; i < val.length && count < maxNodes; i++) {
-          walk((val as unknown[])[i], `${id}.${i}`, id);
+          walk((val as unknown[])[i], `${id}.${i}`, id, String(i));
         }
       } else {
         const obj = val as Record<string, unknown>;
         for (const k of Object.keys(obj)) {
           if (count >= maxNodes) break;
-          walk(obj[k], `${id}.${k}`, id);
+          walk(obj[k], `${id}.${k}`, id, k);
         }
       }
     }
   };
 
-  walk(value, rootId, undefined);
+  walk(value, rootId, undefined, "root");
   return out;
 }
 
@@ -63,13 +72,13 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
     const flat = flattenJsonToNodes(data, "root", maxNodes);
     if (flat.length === 0) return;
 
-    // Costruisce gerarchia
+    // Gerarchia
     const stratifier = d3
-      .stratify<{ id: string; parentId?: string }>()
+      .stratify<FlatNode>()
       .id((d) => d.id)
       .parentId((d) => d.parentId ?? null);
 
-    let root: d3.HierarchyNode<{ id: string; parentId?: string }>;
+    let root: d3.HierarchyNode<FlatNode>;
     try {
       root = stratifier(flat);
     } catch {
@@ -78,15 +87,13 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
       return;
     }
 
-    // Layout ad albero
-    // width per colonna, height per riga
-    const nodeW = 180;
+    // Layout
+    const nodeW = 200;
     const nodeH = 70;
-    const treeLayout = d3.tree<unknown>().nodeSize([nodeH, nodeW]);
+    const treeLayout = d3.tree<FlatNode>().nodeSize([nodeH, nodeW]);
+    const treeRoot = treeLayout(root as unknown as d3.HierarchyPointNode<FlatNode>);
 
-    const treeRoot = treeLayout(root as unknown as d3.HierarchyPointNode<unknown>);
-
-    // Compute bounds
+    // Bounds
     let minX = Infinity,
       maxX = -Infinity,
       minY = Infinity,
@@ -99,11 +106,11 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
       if (y < minY) minY = y;
       if (y > maxY) maxY = y;
     });
-    const width = Math.max(600, maxY - minY + 200);
-    const height = Math.max(400, maxX - minX + 200);
+    const width = Math.max(600, maxY - minY + 220);
+    const height = Math.max(400, maxX - minX + 220);
     svg.attr("viewBox", `0 0 ${width} ${height}`);
 
-    const g = svg.append("g").attr("transform", `translate(${100 - minY}, ${100 - minX})`);
+    const g = svg.append("g").attr("transform", `translate(${110 - minY}, ${110 - minX})`);
 
     // Pan/zoom
     svg.call(
@@ -115,12 +122,11 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
         }) as any
     );
 
-    // Link curve
+    // Links
     const linkGen = d3
       .linkHorizontal<any, any>()
       .x((d) => d.y)
       .y((d) => d.x);
-
     const links = treeRoot.links();
 
     g.append("g")
@@ -131,8 +137,8 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
       .attr("d", linkGen as any)
       .attr("fill", "none")
       .attr("stroke", "hsl(var(--muted-foreground))")
-      .attr("stroke-width", 1.2)
-      .attr("opacity", 0.7);
+      .attr("stroke-width", 1.1)
+      .attr("opacity", 0.65);
 
     // Nodes
     const nodes = g
@@ -144,26 +150,40 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
       .attr("class", "node")
       .attr("transform", (n: any) => `translate(${n.y},${n.x})`);
 
+    // Card
     nodes
       .append("rect")
-      .attr("x", -80)
-      .attr("y", -14)
-      .attr("rx", 6)
-      .attr("ry", 6)
-      .attr("width", 160)
-      .attr("height", 28)
+      .attr("x", -90)
+      .attr("y", -16)
+      .attr("rx", 8)
+      .attr("ry", 8)
+      .attr("width", 180)
+      .attr("height", 32)
       .attr("fill", "hsl(var(--card))")
       .attr("stroke", "hsl(var(--border))");
 
-    const labelMap = new Map(flat.map((n) => [n.id, n.label]));
+    // Label logic
+    const labelFor = (d: FlatNode) => {
+      const key = d.key ?? "";
+      if (d.kind === "object") {
+        // solo chiave + tipo
+        return key === "root" ? "{ }" : `${key}  { }`;
+      }
+      if (d.kind === "array") {
+        return key === "root" ? "[ ]" : `${key}  [ ]`;
+      }
+      // foglia: chiave: valore
+      if (key === "root") return d.valuePreview ?? "";
+      return d.valuePreview ? `${key}: ${d.valuePreview}` : `${key}`;
+    };
 
     nodes
       .append("text")
       .attr("text-anchor", "middle")
       .attr("dominant-baseline", "middle")
-      .attr("font-size", 10)
+      .attr("font-size", 10.5)
       .attr("fill", "hsl(var(--foreground))")
-      .text((n: any) => labelMap.get(n.data.id) ?? n.data.id);
+      .text((n: any) => labelFor(n.data));
   }, [data, maxNodes]);
 
   return (
