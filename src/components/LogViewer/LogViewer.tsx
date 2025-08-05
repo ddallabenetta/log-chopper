@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import LogControls from "./LogControls";
 import LogList from "./LogList";
@@ -271,12 +271,9 @@ export default function LogViewer() {
   const pinnedIds = React.useMemo(() => Array.from(pinned), [pinned]);
 
   return (
-    <Card className="w-full max-w-none rounded-none border-0 flex flex-col overflow-hidden">
-      <CardHeader className="pb-4 px-4 sm:px-6">
-        <CardTitle>Log Viewer</CardTitle>
-      </CardHeader>
-      <CardContent className="flex-1 min-h-0 flex flex-col gap-4 overflow-hidden px-4 sm:px-6">
-        <div className="shrink-0">
+    <Card className="w-screen h-screen max-w-none rounded-none border-0 flex flex-col overflow-hidden">
+      <CardContent className="flex-1 min-h-0 flex flex-col overflow-hidden p-0">
+        <div className="shrink-0 p-3">
           <LogControls
             filter={filter}
             onFilterChange={setFilter}
@@ -292,7 +289,7 @@ export default function LogViewer() {
           />
         </div>
 
-        <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
+        <div className="shrink-0 px-3 pb-2 text-xs text-muted-foreground">
           <label className="flex items-center gap-2">
             Max righe
             <Input
@@ -305,39 +302,36 @@ export default function LogViewer() {
               className="h-8 w-28"
             />
           </label>
-          {ingesting && <span>Import in corso…</span>}
+          {ingesting && <span className="ml-3">Import in corso…</span>}
           {ingestStats.length > 0 && (
-            <span>
-              File importati: {ingestStats.length}
-            </span>
+            <span className="ml-3">File importati: {ingestStats.length}</span>
           )}
         </div>
 
         <div
-          className="flex-1 min-h-0 rounded-md border relative overflow-hidden"
+          className="flex-1 min-h-0 rounded-none relative overflow-auto"
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
           onDrop={onDrop}
         >
           {isDragging && (
-            <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-background/70">
+            <div className="pointer-events-none sticky inset-0 z-10 grid place-items-center bg-background/70">
               <div className="rounded-lg border bg-card px-6 py-3 text-sm">
                 Rilascia i file .log qui
               </div>
             </div>
           )}
-          <div className="absolute inset-0">
-            <LogList
-              lines={allLines}
-              pinned={pinned}
-              onTogglePin={togglePin}
-              filter={filter}
-              showOnlyPinned={showOnlyPinned}
-              onLoadMoreTop={handleLoadMoreTop}
-              jumpToId={pendingJumpId}
-              onAfterJump={() => setPendingJumpId(null)}
-            />
-          </div>
+
+          <LogList
+            lines={allLines}
+            pinned={pinned}
+            onTogglePin={togglePin}
+            filter={filter}
+            showOnlyPinned={showOnlyPinned}
+            onLoadMoreTop={handleLoadMoreTop}
+            jumpToId={pendingJumpId}
+            onAfterJump={() => setPendingJumpId(null)}
+          />
         </div>
       </CardContent>
     </Card>
