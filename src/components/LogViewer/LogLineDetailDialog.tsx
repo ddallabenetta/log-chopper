@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Copy } from "lucide-react";
 import { toast } from "sonner";
 import type { LogLine } from "./LogTypes";
+import JsonGraphViewer from "./JsonGraphViewer";
 
 type Props = {
   open: boolean;
@@ -17,25 +18,16 @@ type Props = {
 
 type JsonExtraction =
   | { kind: "none"; raw: string }
-  | { kind: "full"; formatted: string }
-  | { kind: "embedded"; prefix: string; formatted: string; suffix: string };
+  | { kind: "full"; formatted: string; parsed: unknown }
+  | { kind: "embedded"; prefix: string; formatted: string; parsed: unknown; suffix: string };
 
-/**
- * Estrae il primo blocco JSON valido ({} o []) presente nella stringa.
- * Gestisce stringhe con escape e virgolette per evitare di contare parentesi dentro stringhe.
- */
 function extractFirstJsonBlock(raw: string): JsonExtraction {
   const s = raw.trim();
-
-  // 1) Se l'intera stringa è JSON valido
   try {
     const parsed = JSON.parse(s);
-    return { kind: "full", formatted: JSON.stringify(parsed, null, 2) };
-  } catch {
-    // continua
-  }
+    return { kind: "full", formatted: JSON.stringify(parsed, null, 2), parsed };
+  } catch {}
 
-  // 2) Cerca primo '{' o '[' nel testo grezzo
   const openIdxObj = raw.indexOf("{");
   const openIdxArr = raw.indexOf("[");
   const candidates = [openIdxObj, openIdxArr].filter((i) => i >= 0).sort((a, b) => a - b);
@@ -43,7 +35,6 @@ function extractFirstJsonBlock(raw: string): JsonExtraction {
     return { kind: "none", raw };
   }
 
-  // 3) Prova a partire da ciascun candidato (es. se il primo fallisce, tenta il successivo)
   for (const openIdx of candidates) {
     const opener = raw[openIdx];
     const closer = opener === "{" ? "}" : "]";
@@ -72,7 +63,6 @@ function extractFirstJsonBlock(raw: string): JsonExtraction {
         else if (ch === closer) depth--;
 
         if (depth === 0) {
-          // Candidato blocco
           const jsonSlice = raw.slice(openIdx, i + 1);
           try {
             const parsed = JSON.parse(jsonSlice);
@@ -80,10 +70,10 @@ function extractFirstJsonBlock(raw: string): JsonExtraction {
               kind: "embedded",
               prefix: raw.slice(0, openIdx).trimEnd(),
               formatted: JSON.stringify(parsed, null, 2),
+              parsed,
               suffix: raw.slice(i + 1).trimStart(),
             };
           } catch {
-            // JSON non valido: interrompe e si passa al prossimo candidato
             break;
           }
         }
@@ -91,12 +81,17 @@ function extractFirstJsonBlock(raw: string): JsonExtraction {
     }
   }
 
-  // 4) Nessun blocco JSON valido trovato
   return { kind: "none", raw };
 }
 
 export default function LogLineDetailDialog({ open, onOpenChange, line }: Props) {
-  const contentRef = React.useRef<HTMLTextAreaElement | HTMLPreElement | null>(null);
+  const [view, setView] = React.useState<"text" | "graph">("text");
+
+  React.useEffect(() => {
+    if (!open) return;
+    // reset vista a testo ogni volta che si apre
+    setView("text");
+  }, [open, line?.id]);
 
   const extraction = React.useMemo<JsonExtraction>(() => {
     if (!line) return { kind: "none", raw: "" };
@@ -109,69 +104,91 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
     toast.success("Contenuto copiato");
   };
 
+  const hasJson = extraction.kind !== "none";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Badge variant="secondary">{line?.level}</Badge>
             <span className="truncate">{line?.fileName}:{line?.lineNumber}</span>
           </DialogTitle>
         </DialogHeader>
+
         {line && (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <div className="text-xs text-muted-foreground">ID: {line.id}</div>
             <Separator />
+
             <div className="flex items-center justify-between">
               <div className="text-sm font-medium">
-                Contenuto {extraction.kind === "none" ? "" : "(JSON formattato rilevato)"}
+                {hasJson ? "Contenuto (JSON rilevato)" : "Contenuto"}
               </div>
-              <Button size="sm" variant="outline" onClick={copyToClipboard} className="gap-2">
-                <Copy className="h-4 w-4" />
-                Copia
-              </Button>
+              <div className="flex items-center gap-2">
+                {hasJson && (
+                  <div className="inline-flex rounded-md border p-0.5">
+                    <button
+                      className={`px-2 py-1 text-xs rounded ${view === "text" ? "bg-secondary" : ""}`}
+                      onClick={() => setView("text")}
+                    >
+                      Testo
+                    </button>
+                    <button
+                      className={`px-2 py-1 text-xs rounded ${view === "graph" ? "bg-secondary" : ""}`}
+                      onClick={() => setView("graph")}
+                    >
+                      Grafico
+                    </button>
+                  </div>
+                )}
+                <Button size="sm" variant="outline" onClick={copyToClipboard} className="gap-2">
+                  <Copy className="h-4 w-4" />
+                  Copia
+                </Button>
+              </div>
             </div>
 
-            {extraction.kind === "none" && (
-              <textarea
-                ref={contentRef as React.RefObject<HTMLTextAreaElement>}
-                className="w-full max-h-[60vh] h-[50vh] rounded-md border bg-background p-3 text-sm font-mono overflow-auto"
-                readOnly
-                value={extraction.raw}
-              />
-            )}
-
-            {extraction.kind === "full" && (
-              <pre
-                ref={contentRef as React.RefObject<HTMLPreElement>}
-                className="max-h-[60vh] overflow-auto rounded-md bg-muted p-3 text-xs font-mono whitespace-pre"
-              >
-                {extraction.formatted}
-              </pre>
-            )}
-
-            {extraction.kind === "embedded" && (
-              <div className="space-y-2">
-                {extraction.prefix && (
+            {(!hasJson || view === "text") && (
+              <>
+                {extraction.kind === "none" && (
                   <textarea
-                    className="w-full rounded-md border bg-background p-2 text-xs font-mono overflow-auto"
+                    className="w-full max-h-[60vh] h-[50vh] rounded-md border bg-background p-3 text-sm font-mono overflow-auto"
                     readOnly
-                    value={extraction.prefix}
+                    value={extraction.raw}
                   />
                 )}
-                <pre
-                  className="max-h-[50vh] overflow-auto rounded-md bg-muted p-3 text-xs font-mono whitespace-pre"
-                >
-                  {extraction.formatted}
-                </pre>
-                {extraction.suffix && (
-                  <textarea
-                    className="w-full rounded-md border bg-background p-2 text-xs font-mono overflow-auto"
-                    readOnly
-                    value={extraction.suffix}
-                  />
+                {extraction.kind === "full" && (
+                  <pre className="max-h-[60vh] overflow-auto rounded-md bg-muted p-3 text-xs font-mono whitespace-pre">
+                    {extraction.formatted}
+                  </pre>
                 )}
-              </div>
+                {extraction.kind === "embedded" && (
+                  <div className="space-y-2">
+                    {extraction.prefix && (
+                      <textarea
+                        className="w-full rounded-md border bg-background p-2 text-xs font-mono overflow-auto"
+                        readOnly
+                        value={extraction.prefix}
+                      />
+                    )}
+                    <pre className="max-h-[50vh] overflow-auto rounded-md bg-muted p-3 text-xs font-mono whitespace-pre">
+                      {extraction.formatted}
+                    </pre>
+                    {extraction.suffix && (
+                      <textarea
+                        className="w-full rounded-md border bg-background p-2 text-xs font-mono overflow-auto"
+                        readOnly
+                        value={extraction.suffix}
+                      />
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {hasJson && view === "graph" && (
+              <JsonGraphViewer data={(extraction as any).parsed} />
             )}
           </div>
         )}
