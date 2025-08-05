@@ -32,11 +32,9 @@ function buildMatcher(filter: FilterConfig): ((text: string) => { match: boolean
         return { match: ranges.length > 0, ranges };
       };
     } catch {
-      // Regex non valida: nessun match
       return () => ({ match: false, ranges: [] });
     }
   }
-  // Text search
   return (text: string) => {
     const haystack = filter.caseSensitive ? text : text.toLowerCase();
     const needle = filter.caseSensitive ? filter.query : filter.query.toLowerCase();
@@ -80,8 +78,8 @@ export default function LogList({
   }, [filtered, matcher, showOnlyPinned, filter.query]);
 
   return (
-    <div className="rounded border bg-card">
-      <div className="h-[60vh] overflow-auto">
+    <div className="rounded border bg-card h-full">
+      <div className="h-full overflow-auto">
         {filtered.length === 0 ? (
           <div className="p-6 text-sm text-muted-foreground">Nessun risultato.</div>
         ) : (

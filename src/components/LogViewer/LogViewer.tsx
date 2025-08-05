@@ -43,20 +43,14 @@ export default function LogViewer() {
     const texts = await Promise.all(arr.map(readFileAsText));
     const parsed = arr.map((f, i) => parseContent(f.name, texts[i]));
     setFiles((prev) => [...prev, ...parsed]);
-    setAllLines((prev) => [
-      ...prev,
-      ...parsed.flatMap((p) => p.lines),
-    ]);
+    setAllLines((prev) => [...prev, ...parsed.flatMap((p) => p.lines)]);
   };
 
   const togglePin = (id: string) => {
     setPinned((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
@@ -73,15 +67,16 @@ export default function LogViewer() {
   const totalCount = allLines.length;
 
   const visibleCount = React.useMemo(() => {
-    // calcolato rapidamente con logica simile a LogList
     if (showOnlyPinned) return Array.from(pinned).length;
     if (!filter.query) return totalCount;
-    // stima semplice: filtra qui
     const flags = filter.caseSensitive ? "" : "i";
     try {
       if (filter.mode === "regex") {
         const re = new RegExp(filter.query, flags);
-        return allLines.reduce((acc, l) => (re.test(l.content) || pinned.has(l.id) ? acc + 1 : acc), 0);
+        return allLines.reduce(
+          (acc, l) => (re.test(l.content) || pinned.has(l.id) ? acc + 1 : acc),
+          0
+        );
       }
       const needle = filter.caseSensitive ? filter.query : filter.query.toLowerCase();
       return allLines.reduce((acc, l) => {
@@ -89,17 +84,16 @@ export default function LogViewer() {
         return hay.includes(needle) || pinned.has(l.id) ? acc + 1 : acc;
       }, 0);
     } catch {
-      // regex non valida => solo pinned
       return Array.from(pinned).length;
     }
   }, [allLines, filter, pinned, showOnlyPinned, totalCount]);
 
   return (
-    <Card className="w-full">
-      <CardHeader>
+    <Card className="w-full h-[calc(100vh-6rem)] sm:h-[calc(100vh-8rem)] flex flex-col">
+      <CardHeader className="pb-4">
         <CardTitle>Log Viewer</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="flex-1 flex flex-col gap-4 overflow-hidden">
         <LogControls
           filter={filter}
           onFilterChange={setFilter}
@@ -111,13 +105,15 @@ export default function LogViewer() {
           onFilesSelected={handleFilesSelected}
           onClearAll={clearAll}
         />
-        <LogList
-          lines={allLines}
-          pinned={pinned}
-          onTogglePin={togglePin}
-          filter={filter}
-          showOnlyPinned={showOnlyPinned}
-        />
+        <div className="flex-1 min-h-0">
+          <LogList
+            lines={allLines}
+            pinned={pinned}
+            onTogglePin={togglePin}
+            filter={filter}
+            showOnlyPinned={showOnlyPinned}
+          />
+        </div>
       </CardContent>
     </Card>
   );
