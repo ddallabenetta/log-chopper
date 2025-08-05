@@ -67,6 +67,7 @@ export default function LogList({
   const containerRef = React.useRef<HTMLDivElement | null>(null);
 
   const matcher = React.useMemo(() => buildMatcher(filter), [filter]);
+
   const passesLevel = React.useCallback(
     (lvl: LogLine["level"]) => (filter.level === "ALL" ? true : lvl === filter.level),
     [filter.level]
@@ -96,51 +97,67 @@ export default function LogList({
   const overscan = 20;
 
   const [viewport, setViewport] = React.useState({ height: 0, scrollTop: 0 });
-  const [didInitScrollBottom, setDidInitScrollBottom] = React.useState(false);
+  const setViewportSafe = React.useCallback((next: { height: number; scrollTop: number }) => {
+    setViewport((prev) => {
+      if (prev.height === next.height && prev.scrollTop === next.scrollTop) return prev;
+      return next;
+    });
+  }, []);
+
+  // semplice debounce via rAF per scroll/resize
+  const rafIdRef = React.useRef<number | null>(null);
+  const scheduleSetViewport = React.useCallback((el: HTMLElement) => {
+    if (rafIdRef.current != null) cancelAnimationFrame(rafIdRef.current);
+    rafIdRef.current = requestAnimationFrame(() => {
+      rafIdRef.current = null;
+      setViewportSafe({ height: el.clientHeight, scrollTop: el.scrollTop });
+    });
+  }, [setViewportSafe]);
 
   React.useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
     const onScroll = () => {
-      setViewport({ height: el.clientHeight, scrollTop: el.scrollTop });
+      scheduleSetViewport(el);
       if (onLoadMoreTop && el.scrollTop < 50) onLoadMoreTop();
     };
 
-    setViewport({ height: el.clientHeight, scrollTop: el.scrollTop });
+    scheduleSetViewport(el);
     el.addEventListener("scroll", onScroll);
-    const ro = new ResizeObserver(() => {
-      setViewport({ height: el.clientHeight, scrollTop: el.scrollTop });
-    });
+    const ro = new ResizeObserver(() => scheduleSetViewport(el));
     ro.observe(el);
+
     return () => {
       el.removeEventListener("scroll", onScroll);
       ro.disconnect();
+      if (rafIdRef.current != null) cancelAnimationFrame(rafIdRef.current);
     };
-  }, [onLoadMoreTop]);
+  }, [onLoadMoreTop, scheduleSetViewport]);
 
-  // Quando cambia l’altezza esterna (p.es. dopo aver caricato righe), ricalcola il viewport.
+  // Osserva l’outer per cambi di layout esterni
   React.useEffect(() => {
     const outer = outerRef.current;
     const el = containerRef.current;
     if (!outer || !el) return;
-    const ro = new ResizeObserver(() => {
-      setViewport({ height: el.clientHeight, scrollTop: el.scrollTop });
-    });
+    const ro = new ResizeObserver(() => scheduleSetViewport(el));
     ro.observe(outer);
     return () => ro.disconnect();
-  }, []);
+  }, [scheduleSetViewport]);
 
+  // Scroll iniziale in fondo solo una volta quando arrivano le prime righe
+  const didInitScrollBottomRef = React.useRef(false);
   React.useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    if (!didInitScrollBottom && filtered.length > 0) {
+    if (!didInitScrollBottomRef.current && filtered.length > 0) {
       el.scrollTop = el.scrollHeight;
-      setDidInitScrollBottom(true);
-      setViewport({ height: el.clientHeight, scrollTop: el.scrollTop });
+      didInitScrollBottomRef.current = true;
+      scheduleSetViewport(el);
     }
-  }, [filtered.length, didInitScrollBottom]);
+  }, [filtered.length, scheduleSetViewport]);
 
+  // Jump to id
   React.useEffect(() => {
     if (!jumpToId) return;
     const el = containerRef.current;
@@ -149,11 +166,14 @@ export default function LogList({
     const idx = filtered.findIndex((l) => l.id === jumpToId);
     if (idx >= 0) {
       const targetTop = idx * rowHeight - viewport.height / 2;
-      el.scrollTop = Math.max(0, targetTop);
-      setViewport({ height: el.clientHeight, scrollTop: el.scrollTop });
+      const nextTop = Math.max(0, targetTop);
+      if (el.scrollTop !== nextTop) {
+        el.scrollTop = nextTop;
+        scheduleSetViewport(el);
+      }
     }
     onAfterJump && onAfterJump();
-  }, [jumpToId, filtered, onAfterJump, viewport.height]);
+  }, [jumpToId, filtered, onAfterJump, viewport.height, scheduleSetViewport]);
 
   const total = filtered.length;
   const startIndex = Math.max(0, Math.floor(viewport.scrollTop / rowHeight) - overscan);
