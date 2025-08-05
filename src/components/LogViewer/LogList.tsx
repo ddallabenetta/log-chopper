@@ -216,10 +216,13 @@ export default function LogList({
           <div style={{ height: totalHeight + "px", position: "relative" }}>
             <div style={{ position: "absolute", top: offsetY + "px", left: 0, right: 0 }}>
               {items.map((line, i) => {
-                const isEven = (startIndex + i) % 2 === 0;
+                const absoluteIndex = startIndex + i;
+                const isEven = absoluteIndex % 2 === 0;
+                // Key unica e stabile anche in presenza di duplicati
+                const renderKey = `${line.id}__${absoluteIndex}`;
                 return (
                   <div
-                    key={line.id}
+                    key={renderKey}
                     className={isEven ? "bg-muted/30" : "bg-transparent"}
                     data-row-id={line.id}
                   >
