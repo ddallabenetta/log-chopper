@@ -271,7 +271,7 @@ export default function LogViewer() {
   const pinnedIds = React.useMemo(() => Array.from(pinned), [pinned]);
 
   return (
-    <Card className="w-full h-[100dvh] max-w-none rounded-none border-0 flex flex-col overflow-hidden">
+    <Card className="w-full max-w-none rounded-none border-0 flex flex-col overflow-hidden">
       <CardHeader className="pb-4 px-4 sm:px-6">
         <CardTitle>Log Viewer</CardTitle>
       </CardHeader>
@@ -306,13 +306,13 @@ export default function LogViewer() {
           {ingesting && <span>Import in corso…</span>}
           {ingestStats.length > 0 && (
             <span>
-              File importati: {iggestStats.length} • Scartate (globali per step): potrebbero essere applicati limiti di memoria
+              File importati: {ingestStats.length}
             </span>
           )}
         </div>
 
         <div
-          className={`flex-1 min-h-0 rounded-md border relative overflow-x-hidden`}
+          className="flex-1 min-h-0 rounded-md border relative overflow-x-hidden"
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
           onDrop={onDrop}
