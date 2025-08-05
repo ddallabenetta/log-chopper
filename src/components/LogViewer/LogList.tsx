@@ -97,6 +97,7 @@ export default function LogList({
   const overscan = 20;
 
   const [viewport, setViewport] = React.useState({ height: 0, scrollTop: 0 });
+
   const setViewportSafe = React.useCallback((next: { height: number; scrollTop: number }) => {
     setViewport((prev) => {
       if (prev.height === next.height && prev.scrollTop === next.scrollTop) return prev;
@@ -104,13 +105,13 @@ export default function LogList({
     });
   }, []);
 
-  // semplice debounce via rAF per scroll/resize
   const rafIdRef = React.useRef<number | null>(null);
   const scheduleSetViewport = React.useCallback((el: HTMLElement) => {
     if (rafIdRef.current != null) cancelAnimationFrame(rafIdRef.current);
     rafIdRef.current = requestAnimationFrame(() => {
       rafIdRef.current = null;
-      setViewportSafe({ height: el.clientHeight, scrollTop: el.scrollTop });
+      const next = { height: el.clientHeight, scrollTop: el.scrollTop };
+      setViewportSafe(next);
     });
   }, [setViewportSafe]);
 
@@ -123,9 +124,15 @@ export default function LogList({
       if (onLoadMoreTop && el.scrollTop < 50) onLoadMoreTop();
     };
 
+    // init
     scheduleSetViewport(el);
+
     el.addEventListener("scroll", onScroll);
-    const ro = new ResizeObserver(() => scheduleSetViewport(el));
+    const ro = new ResizeObserver(() => {
+      // Aggiorna solo se l’altezza cambia realmente
+      const h = el.clientHeight;
+      if (h !== viewport.height) scheduleSetViewport(el);
+    });
     ro.observe(el);
 
     return () => {
@@ -133,31 +140,34 @@ export default function LogList({
       ro.disconnect();
       if (rafIdRef.current != null) cancelAnimationFrame(rafIdRef.current);
     };
-  }, [onLoadMoreTop, scheduleSetViewport]);
+  }, [onLoadMoreTop, scheduleSetViewport, viewport.height]);
 
-  // Osserva l’outer per cambi di layout esterni
   React.useEffect(() => {
     const outer = outerRef.current;
     const el = containerRef.current;
     if (!outer || !el) return;
-    const ro = new ResizeObserver(() => scheduleSetViewport(el));
+    const ro = new ResizeObserver(() => {
+      const h = el.clientHeight;
+      if (h !== viewport.height) scheduleSetViewport(el);
+    });
     ro.observe(outer);
     return () => ro.disconnect();
-  }, [scheduleSetViewport]);
+  }, [scheduleSetViewport, viewport.height]);
 
-  // Scroll iniziale in fondo solo una volta quando arrivano le prime righe
   const didInitScrollBottomRef = React.useRef(false);
   React.useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     if (!didInitScrollBottomRef.current && filtered.length > 0) {
-      el.scrollTop = el.scrollHeight;
+      const nextTop = el.scrollHeight;
+      if (el.scrollTop !== nextTop) {
+        el.scrollTop = nextTop;
+        scheduleSetViewport(el);
+      }
       didInitScrollBottomRef.current = true;
-      scheduleSetViewport(el);
     }
   }, [filtered.length, scheduleSetViewport]);
 
-  // Jump to id
   React.useEffect(() => {
     if (!jumpToId) return;
     const el = containerRef.current;
