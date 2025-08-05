@@ -15,24 +15,88 @@ type Props = {
   line: LogLine | null;
 };
 
-function tryFormatJson(raw: string): { isJson: boolean; formatted: string } {
-  // Heuristica: cerca primo e ultimo blocco JSON al volo
-  // Se l’intera stringa è JSON valido, la formattiamo; altrimenti mostriamo testo grezzo.
-  const trimmed = raw.trim();
+type JsonExtraction =
+  | { kind: "none"; raw: string }
+  | { kind: "full"; formatted: string }
+  | { kind: "embedded"; prefix: string; formatted: string; suffix: string };
+
+/**
+ * Trova il primo JSON bilanciato in una stringa.
+ * Gestisce sia oggetti {} che array [].
+ */
+function extractFirstJsonBlock(raw: string): JsonExtraction {
+  const s = raw.trim();
+  // Caso: l'intera stringa è JSON
   try {
-    const parsed = JSON.parse(trimmed);
-    return { isJson: true, formatted: JSON.stringify(parsed, null, 2) };
+    const parsed = JSON.parse(s);
+    return { kind: "full", formatted: JSON.stringify(parsed, null, 2) };
   } catch {
-    return { isJson: false, formatted: raw };
+    // continua
   }
+
+  // Prova a trovare un blocco JSON incastonato: cerca primo { o [
+  const openIdxObj = raw.indexOf("{");
+  const openIdxArr = raw.indexOf("[");
+  const openIdx = [openIdxObj, openIdxArr].filter((i) => i >= 0).sort((a, b) => a - b)[0];
+
+  if (openIdx === undefined) {
+    return { kind: "none", raw };
+  }
+
+  const opener = raw[openIdx];
+  const closer = opener === "{" ? "}" : "]";
+  let depth = 0;
+  let i = openIdx;
+  let inString = false;
+  let escaped = false;
+
+  for (; i < raw.length; i++) {
+    const ch = raw[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === "\"") {
+        inString = false;
+      }
+      continue;
+    } else {
+      if (ch === "\"") {
+        inString = true;
+        continue;
+      }
+      if (ch === opener) depth++;
+      else if (ch === closer) depth--;
+      if (depth === 0) {
+        // Candidato blocco JSON = raw.slice(openIdx, i+1)
+        const jsonSlice = raw.slice(openIdx, i + 1);
+        try {
+          const parsed = JSON.parse(jsonSlice);
+          return {
+            kind: "embedded",
+            prefix: raw.slice(0, openIdx).trimEnd(),
+            formatted: JSON.stringify(parsed, null, 2),
+            suffix: raw.slice(i + 1).trimStart(),
+          };
+        } catch {
+          // continua a cercare un altro blocco
+          break;
+        }
+      }
+    }
+  }
+
+  return { kind: "none", raw };
 }
 
 export default function LogLineDetailDialog({ open, onOpenChange, line }: Props) {
   const contentRef = React.useRef<HTMLTextAreaElement | HTMLPreElement | null>(null);
 
-  const formatted = React.useMemo(() => {
-    if (!line) return { isJson: false, formatted: "" };
-    return tryFormatJson(line.content);
+  const extraction = React.useMemo<JsonExtraction>(() => {
+    if (!line) return { kind: "none", raw: "" };
+    return extractFirstJsonBlock(line.content);
   }, [line]);
 
   const copyToClipboard = async () => {
@@ -52,33 +116,58 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
         </DialogHeader>
         {line && (
           <div className="space-y-2">
-            <div className="text-xs text-muted-foreground">
-              ID: {line.id}
-            </div>
+            <div className="text-xs text-muted-foreground">ID: {line.id}</div>
             <Separator />
             <div className="flex items-center justify-between">
               <div className="text-sm font-medium">
-                Contenuto {formatted.isJson ? "(JSON formattato)" : ""}
+                Contenuto {extraction.kind === "none" ? "" : "(JSON formattato rilevato)"}
               </div>
               <Button size="sm" variant="outline" onClick={copyToClipboard} className="gap-2">
                 <Copy className="h-4 w-4" />
                 Copia
               </Button>
             </div>
-            {formatted.isJson ? (
-              <pre
-                ref={contentRef as React.RefObject<HTMLPreElement>}
-                className="max-h-[60vh] overflow-auto rounded-md bg-muted p-3 text-xs font-mono whitespace-pre"
-              >
-                {formatted.formatted}
-              </pre>
-            ) : (
+
+            {extraction.kind === "none" && (
               <textarea
                 ref={contentRef as React.RefObject<HTMLTextAreaElement>}
                 className="w-full max-h-[60vh] h-[50vh] rounded-md border bg-background p-3 text-sm font-mono overflow-auto"
                 readOnly
-                value={line.content}
+                value={extraction.raw}
               />
+            )}
+
+            {extraction.kind === "full" && (
+              <pre
+                ref={contentRef as React.RefObject<HTMLPreElement>}
+                className="max-h-[60vh] overflow-auto rounded-md bg-muted p-3 text-xs font-mono whitespace-pre"
+              >
+                {extraction.formatted}
+              </pre>
+            )}
+
+            {extraction.kind === "embedded" && (
+              <div className="space-y-2">
+                {extraction.prefix && (
+                  <textarea
+                    className="w-full rounded-md border bg-background p-2 text-xs font-mono overflow-auto"
+                    readOnly
+                    value={extraction.prefix}
+                  />
+                )}
+                <pre
+                  className="max-h-[50vh] overflow-auto rounded-md bg-muted p-3 text-xs font-mono whitespace-pre"
+                >
+                  {extraction.formatted}
+                </pre>
+                {extraction.suffix && (
+                  <textarea
+                    className="w-full rounded-md border bg-background p-2 text-xs font-mono overflow-auto"
+                    readOnly
+                    value={extraction.suffix}
+                  />
+                )}
+              </div>
             )}
           </div>
         )}
