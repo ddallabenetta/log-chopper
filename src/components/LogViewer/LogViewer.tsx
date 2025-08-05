@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import LogControls from "./LogControls";
 import LogList from "./LogList";
+import ChatSidebar from "./ChatSidebar";
 import type { FilterConfig, LogLine, ParsedFile, LogLevel } from "./LogTypes";
 
 function detectLevel(text: string): LogLevel {
@@ -309,7 +310,7 @@ export default function LogViewer() {
         </div>
 
         <div
-          className="flex-1 min-h-0 rounded-none relative overflow-auto"
+          className="flex-1 min-h-0 rounded-none relative overflow-hidden flex"
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
           onDrop={onDrop}
@@ -322,16 +323,20 @@ export default function LogViewer() {
             </div>
           )}
 
-          <LogList
-            lines={allLines}
-            pinned={pinned}
-            onTogglePin={togglePin}
-            filter={filter}
-            showOnlyPinned={showOnlyPinned}
-            onLoadMoreTop={handleLoadMoreTop}
-            jumpToId={pendingJumpId}
-            onAfterJump={() => setPendingJumpId(null)}
-          />
+          <div className="flex-1 min-w-0 overflow-auto">
+            <LogList
+              lines={allLines}
+              pinned={pinned}
+              onTogglePin={togglePin}
+              filter={filter}
+              showOnlyPinned={showOnlyPinned}
+              onLoadMoreTop={handleLoadMoreTop}
+              jumpToId={pendingJumpId}
+              onAfterJump={() => setPendingJumpId(null)}
+            />
+          </div>
+
+          <ChatSidebar lines={allLines} pinnedIds={pinnedIds} filter={filter} />
         </div>
       </CardContent>
     </Card>
