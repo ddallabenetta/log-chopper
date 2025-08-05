@@ -57,6 +57,8 @@ export default function LogList({
   filter,
   showOnlyPinned,
 }: Props) {
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+
   const matcher = React.useMemo(() => buildMatcher(filter), [filter]);
 
   const passesLevel = React.useCallback(
@@ -84,21 +86,62 @@ export default function LogList({
     return map;
   }, [filtered, matcher, showOnlyPinned, filter.query]);
 
+  // Altezza riga stimata per virtualizzazione
+  const rowHeight = 22; // px, semplice stima
+  const overscan = 20; // righe extra sopra/sotto
+
+  const [viewport, setViewport] = React.useState({ height: 0, scrollTop: 0 });
+
+  React.useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const onScroll = () => {
+      setViewport({ height: el.clientHeight, scrollTop: el.scrollTop });
+    };
+
+    setViewport({ height: el.clientHeight, scrollTop: el.scrollTop });
+    el.addEventListener("scroll", onScroll);
+    const ro = new ResizeObserver(() => {
+      setViewport({ height: el.clientHeight, scrollTop: el.scrollTop });
+    });
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+    };
+  }, []);
+
+  const total = filtered.length;
+  const startIndex = Math.max(0, Math.floor(viewport.scrollTop / rowHeight) - overscan);
+  const endIndex = Math.min(
+    total,
+    Math.ceil((viewport.scrollTop + viewport.height) / rowHeight) + overscan
+  );
+  const items = filtered.slice(startIndex, endIndex);
+
+  const offsetY = startIndex * rowHeight;
+  const totalHeight = total * rowHeight;
+
   return (
     <div className="rounded border bg-card h-full">
-      <div className="h-full overflow-auto">
+      <div ref={containerRef} className="h-full overflow-auto relative">
         {filtered.length === 0 ? (
           <div className="p-6 text-sm text-muted-foreground">Nessun risultato.</div>
         ) : (
-          filtered.map((line) => (
-            <LogLineItem
-              key={line.id}
-              line={line}
-              isPinned={pinned.has(line.id)}
-              onTogglePin={onTogglePin}
-              highlightRanges={highlightMap.get(line.id) ?? []}
-            />
-          ))
+          <div style={{ height: totalHeight + "px", position: "relative" }}>
+            <div style={{ position: "absolute", top: offsetY + "px", left: 0, right: 0 }}>
+              {items.map((line) => (
+                <LogLineItem
+                  key={line.id}
+                  line={line}
+                  isPinned={pinned.has(line.id)}
+                  onTogglePin={onTogglePin}
+                  highlightRanges={highlightMap.get(line.id) ?? []}
+                />
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </div>

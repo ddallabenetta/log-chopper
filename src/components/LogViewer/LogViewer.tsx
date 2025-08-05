@@ -3,18 +3,10 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import LogControls from "./LogControls";
 import LogList from "./LogList";
 import type { FilterConfig, LogLine, ParsedFile, LogLevel } from "./LogTypes";
-
-function readFileAsText(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error);
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.readAsText(file);
-  });
-}
 
 function detectLevel(text: string): LogLevel {
   const t = text.toUpperCase();
@@ -26,17 +18,36 @@ function detectLevel(text: string): LogLevel {
   return "OTHER";
 }
 
-function parseContent(fileName: string, content: string): ParsedFile {
-  const rawLines = content.split(/\r?\n/);
-  const lines: LogLine[] = rawLines.map((content, idx) => ({
-    id: `${fileName}:${idx + 1}`,
-    fileName,
-    lineNumber: idx + 1,
-    content,
-    level: detectLevel(content),
-  }));
-  return { fileName, lines, totalLines: lines.length };
+async function* streamLines(file: File): AsyncGenerator<string, void, unknown> {
+  const reader = file.stream().getReader();
+  const decoder = new TextDecoder();
+  let { value, done } = await reader.read();
+  let chunk = value ? decoder.decode(value, { stream: true }) : "";
+  let buffer = "";
+  while (!done) {
+    buffer += chunk;
+    let idx: number;
+    while ((idx = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, idx);
+      yield line.replace(/\r$/, "");
+      buffer = buffer.slice(idx + 1);
+    }
+    ({ value, done } = await reader.read());
+    chunk = value ? decoder.decode(value, { stream: true }) : "";
+  }
+  // flush finale
+  const tail = decoder.decode();
+  if (tail) buffer += tail;
+  if (buffer.length > 0) {
+    yield buffer.replace(/\r$/, "");
+  }
 }
+
+type FileIngestStats = {
+  fileName: string;
+  totalLines: number;
+  droppedLines: number;
+};
 
 export default function LogViewer() {
   const [files, setFiles] = React.useState<ParsedFile[]>([]);
@@ -50,14 +61,110 @@ export default function LogViewer() {
   });
   const [showOnlyPinned, setShowOnlyPinned] = React.useState(false);
 
+  // Performance settings
+  const [maxLines, setMaxLines] = React.useState<number>(50000);
+
+  // Progress UI
+  const [isDragging, setIsDragging] = React.useState(false);
+  const [ingesting, setIngesting] = React.useState(false);
+  const [ingestStats, setIngestStats] = React.useState<FileIngestStats[]>([]);
+
   const addFiles = async (list: FileList | File[]) => {
     const arr = Array.from(list);
     if (arr.length === 0) return;
-    const texts = await Promise.all(arr.map(readFileAsText));
-    const parsed = arr.map((f, i) => parseContent(f.name, texts[i]));
-    setFiles((prev) => [...prev, ...parsed]);
-    setAllLines((prev) => [...prev, ...parsed.flatMap((p) => p.lines)]);
-    toast.success(`${arr.length} file caricati`);
+    setIngesting(true);
+    const newStats: FileIngestStats[] = [];
+    const newParsedFiles: ParsedFile[] = [];
+    const newLines: LogLine[] = [];
+
+    for (const f of arr) {
+      const fileName = f.name;
+      let index = 0;
+      let totalLines = 0;
+      let dropped = 0;
+      const linesForFile: LogLine[] = [];
+      for await (const rawLine of streamLines(f)) {
+        totalLines++;
+        const lineObj: LogLine = {
+          id: `${fileName}:${totalLines}`,
+          fileName,
+          lineNumber: totalLines,
+          content: rawLine,
+          level: detectLevel(rawLine),
+        };
+
+        linesForFile.push(lineObj);
+        newLines.push(lineObj);
+
+        // Mantieni solo le ultime maxLines globalmente
+        if (newLines.length > maxLines) {
+          const removeCount = newLines.length - maxLines;
+          dropped += removeCount;
+          newLines.splice(0, removeCount);
+        }
+
+        // Aggiorna UI a batch per non bloccare
+        index++;
+        if (index % 5000 === 0) {
+          setAllLines((prev) => {
+            const merged = [...prev, ...newLines];
+            if (merged.length > maxLines) {
+              merged.splice(0, merged.length - maxLines);
+            }
+            return merged;
+          });
+          setIngestStats((prev) => {
+            const copy = prev.slice();
+            const existing = copy.find((s) => s.fileName === fileName);
+            const partial: FileIngestStats = {
+              fileName,
+              totalLines,
+              droppedLines: dropped,
+            };
+            if (existing) {
+              existing.totalLines = totalLines;
+              existing.droppedLines = dropped;
+            } else {
+              copy.push(partial);
+            }
+            return copy;
+          });
+          await new Promise((r) => setTimeout(r));
+        }
+      }
+
+      // File finished
+      newParsedFiles.push({
+        fileName,
+        lines: linesForFile.slice(-Math.min(linesForFile.length, maxLines)),
+        totalLines,
+      });
+
+      newStats.push({
+        fileName,
+        totalLines,
+        droppedLines: dropped,
+      });
+    }
+
+    // Commit finale
+    setFiles((prev) => [...prev, ...newParsedFiles]);
+    setAllLines((prev) => {
+      const merged = [...prev, ...newLines];
+      if (merged.length > maxLines) {
+        merged.splice(0, merged.length - maxLines);
+      }
+      return merged;
+    });
+    setIngestStats((prev) => {
+      // merge by fileName
+      const map = new Map<string, FileIngestStats>();
+      [...prev, ...newStats].forEach((s) => map.set(s.fileName, s));
+      return Array.from(map.values());
+    });
+
+    setIngesting(false);
+    toast.success(`${arr.length} file caricati (stream)`);
   };
 
   const handleFilesSelected = async (list: FileList) => {
@@ -79,6 +186,7 @@ export default function LogViewer() {
     setPinned(new Set());
     setFilter({ query: "", mode: "text", caseSensitive: false, level: "ALL" });
     setShowOnlyPinned(false);
+    setIngestStats([]);
     toast.message("Pulito");
   };
 
@@ -113,8 +221,7 @@ export default function LogViewer() {
     }
   }, [allLines, filter, pinned, showOnlyPinned]);
 
-  // Drag & Drop handlers
-  const [isDragging, setIsDragging] = React.useState(false);
+  // Drag & Drop handlers (zona lista)
   const onDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
@@ -131,6 +238,19 @@ export default function LogViewer() {
     if (files && files.length > 0) {
       await addFiles(files);
     }
+  };
+
+  // Gestione cambio maxLines: limita subito l'array
+  const onChangeMaxLines = (val: number) => {
+    const v = Math.max(1000, Math.min(500000, Math.floor(val)));
+    setMaxLines(v);
+    setAllLines((prev) => {
+      if (prev.length > v) {
+        return prev.slice(-v);
+      }
+      return prev;
+    });
+    toast.message(`Max righe: ${v.toLocaleString()}`);
   };
 
   return (
@@ -150,6 +270,28 @@ export default function LogViewer() {
           onFilesSelected={handleFilesSelected}
           onClearAll={clearAll}
         />
+
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <label className="flex items-center gap-2">
+            Max righe
+            <Input
+              type="number"
+              min={1000}
+              max={500000}
+              step={1000}
+              value={maxLines}
+              onChange={(e) => onChangeMaxLines(Number(e.target.value))}
+              className="h-8 w-28"
+            />
+          </label>
+          {ingesting && <span>Import in corso…</span>}
+          {ingestStats.length > 0 && (
+            <span>
+              File importati: {ingestStats.length} • Scartate (globali per step): potrebbero essere applicati limiti di memoria
+            </span>
+          )}
+        </div>
+
         <div
           className={`flex-1 min-h-0 rounded-md border relative ${
             isDragging ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""
