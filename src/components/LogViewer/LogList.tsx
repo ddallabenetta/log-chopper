@@ -130,15 +130,18 @@ export default function LogList({
   }, [jumpToId, onAfterJump]);
 
   return (
-    <div className="rounded border bg-card h-full min-h-0">
-      <div ref={containerRef} className="h-full min-h-0 overflow-auto">
+    <div className="rounded border bg-card h-full min-h-0 flex flex-col">
+      <div
+        ref={containerRef}
+        className="flex-1 min-h-0 overflow-auto"
+        style={{ contain: "content" }}
+      >
         {filtered.length === 0 ? (
           <div className="p-6 text-sm text-muted-foreground">Nessun risultato.</div>
         ) : (
           <div>
             {filtered.map((line, idx) => {
               const isEven = idx % 2 === 0;
-              // Key unica anche con duplicati: id + idx
               const renderKey = `${line.id}__${idx}`;
               return (
                 <div
