@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Send, Bot, PanelRightClose, PanelRightOpen, Settings2 } from "lucide-react";
+import { Send, Bot, PanelRightClose, PanelRightOpen, Settings2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -72,14 +72,102 @@ function pickContext(lines: LogLine[], pinnedIds: string[], maxPinned = 150, max
   };
 }
 
+async function streamOpenAI(params: {
+  endpoint: string;
+  key: string;
+  body: any;
+  signal?: AbortSignal;
+  onToken: (t: string) => void;
+}) {
+  const res = await fetch(params.endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${params.key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ ...params.body, stream: true }),
+    signal: params.signal,
+  });
+  if (!res.ok) throw new Error(`OpenAI error: ${res.status} ${await res.text()}`);
+  const reader = res.body?.getReader();
+  if (!reader) return;
+  const decoder = new TextDecoder();
+  let done = false;
+  while (!done) {
+    const { value, done: d } = await reader.read();
+    done = d;
+    if (value) {
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split("\n");
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const data = trimmed.slice(5).trim();
+        if (data === "[DONE]") return;
+        try {
+          const json = JSON.parse(data);
+          const token = json.choices?.[0]?.delta?.content ?? "";
+          if (token) params.onToken(token);
+        } catch {
+          // ignore parse errors
+        }
+      }
+    }
+  }
+}
+
+async function streamOpenRouter(params: {
+  key: string;
+  body: any;
+  signal?: AbortSignal;
+  onToken: (t: string) => void;
+}) {
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${params.key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ ...params.body, stream: true }),
+    signal: params.signal,
+  });
+  if (!res.ok) throw new Error(`OpenRouter error: ${res.status} ${await res.text()}`);
+  const reader = res.body?.getReader();
+  if (!reader) return;
+  const decoder = new TextDecoder();
+  let done = false;
+  while (!done) {
+    const { value, done: d } = await reader.read();
+    done = d;
+    if (value) {
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split("\n");
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const data = trimmed.slice(5).trim();
+        if (data === "[DONE]") return;
+        try {
+          const json = JSON.parse(data);
+          const token = json.choices?.[0]?.delta?.content ?? "";
+          if (token) params.onToken(token);
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+}
+
 async function callLLM(params: {
   provider: Provider;
   model: string;
   apiKey?: string;
   messages: Message[];
   abortSignal?: AbortSignal;
+  onToken?: (t: string) => void;
 }): Promise<string> {
-  const { provider, model, apiKey, messages, abortSignal } = params;
+  const { provider, model, apiKey, messages, abortSignal, onToken } = params;
 
   const getKeyFallback = () => {
     if (apiKey && apiKey.trim()) return apiKey.trim();
@@ -93,21 +181,24 @@ async function callLLM(params: {
     return undefined;
   };
 
-  const body = {
-    model,
-    messages,
-    temperature: 0.2,
-  };
+  const body = { model, messages, temperature: 0.2 };
 
   if (provider === "openai") {
     const key = apiKey || getKeyFallback() || (process.env.OPENAI_API_KEY as string | undefined);
     if (!key) throw new Error("OPENAI_API_KEY mancante. Inserisci la chiave nel pannello.");
+    if (onToken) {
+      await streamOpenAI({
+        endpoint: "https://api.openai.com/v1/chat/completions",
+        key,
+        body,
+        signal: abortSignal,
+        onToken,
+      });
+      return "";
+    }
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-      },
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: abortSignal,
     });
@@ -119,12 +210,10 @@ async function callLLM(params: {
   if (provider === "deepseek") {
     const key = apiKey || getKeyFallback() || (process.env.DEEPSEEK_API_KEY as string | undefined);
     if (!key) throw new Error("DEEPSEEK_API_KEY mancante. Inserisci la chiave nel pannello.");
+    // DeepSeek: non sempre offre SSE compatibile; effettua fallback a risposta completa.
     const res = await fetch("https://api.deepseek.com/chat/completions", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-      },
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: abortSignal,
     });
@@ -136,12 +225,13 @@ async function callLLM(params: {
   // openrouter
   const key = apiKey || getKeyFallback() || (process.env.OPENROUTER_API_KEY as string | undefined);
   if (!key) throw new Error("OPENROUTER_API_KEY mancante. Inserisci la chiave nel pannello.");
+  if (onToken) {
+    await streamOpenRouter({ key, body, signal: abortSignal, onToken });
+    return "";
+  }
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
     signal: abortSignal,
   });
@@ -160,12 +250,11 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
     { role: "system", content: DEFAULT_SYSTEM_PROMPT },
   ]);
   const [loading, setLoading] = React.useState(false);
+  const [streamBuffer, setStreamBuffer] = React.useState<string>("");
   const abortRef = React.useRef<AbortController | null>(null);
+  const listRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
-    // Quando cambio provider:
-    // - se openrouter: mantieni model attuale (non forzare da lista), così l'utente può scrivere libero.
-    // - altrimenti: seleziona il primo modello disponibile del provider.
     setModel((prev) => {
       if (provider === "openrouter") return prev || PROVIDER_MODELS.openrouter.models[0].id;
       const first = PROVIDER_MODELS[provider].models[0]?.id;
@@ -174,9 +263,22 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider]);
 
+  React.useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight - el.clientHeight;
+  }, [messages, streamBuffer, loading]);
+
   const send = async (question?: string) => {
     const q = (question ?? input).trim();
     if (!q) return;
+
+    // Mostriamo solo ciò che scrivi tu
+    setMessages((prev) => [...prev.filter(m => m.role !== "system"), { role: "user", content: q }]);
+    setInput("");
+    setLoading(true);
+    setStreamBuffer("");
+
     const { pinnedText, otherText, totalPinned, totalOthers } = pickContext(lines, pinnedIds);
     const userContent = [
       "Contesto log (pinned prioritari):",
@@ -192,20 +294,36 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
       ...messages.filter(m => m.role !== "system"),
       { role: "user", content: userContent },
     ];
-    setMessages(nextMessages);
-    setInput("");
-    setLoading(true);
+
     const controller = new AbortController();
     abortRef.current = controller;
+
     try {
-      const answer = await callLLM({
+      // Streaming dove possibile
+      await callLLM({
         provider,
         model,
         apiKey,
         messages: nextMessages,
         abortSignal: controller.signal,
+        onToken: (t) => setStreamBuffer((prev) => prev + t),
       });
-      setMessages(prev => [...prev, { role: "assistant", content: answer }]);
+      // Se non c'è streaming (provider fallback), callLLM restituisce testo completo oppure "" (caso stream)
+      if (streamBuffer.length === 0) {
+        // Nessun token arrivato via stream: rifacciamo la call senza onToken per ottenere la risposta completa
+        const full = await callLLM({
+          provider,
+          model,
+          apiKey,
+          messages: nextMessages,
+          abortSignal: controller.signal,
+        });
+        setMessages((prev) => [...prev, { role: "assistant", content: full }]);
+      } else {
+        // Chiudiamo lo stream nella history
+        setMessages((prev) => [...prev, { role: "assistant", content: streamBuffer }]);
+        setStreamBuffer("");
+      }
     } finally {
       setLoading(false);
       abortRef.current = null;
@@ -283,13 +401,13 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
           </div>
 
           <div className="text-[10px] text-muted-foreground">
-            Verranno inviate prima le righe pinnate, poi un campione delle altre righe visibili.
+            Le righe pinned hanno priorità nel contesto (non vengono mostrate qui).
           </div>
         </div>
       )}
 
       {open && (
-        <div className="flex-1 min-h-0 overflow-auto p-2 space-y-2">
+        <div ref={listRef} className="flex-1 min-h-0 overflow-auto p-2 space-y-2">
           {messages
             .filter(m => m.role !== "system")
             .map((m, idx) => (
@@ -297,6 +415,17 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
                 <div className="whitespace-pre-wrap break-words">{m.content}</div>
               </Card>
             ))}
+          {loading && streamBuffer && (
+            <Card className="p-2 text-sm bg-muted/50">
+              <div className="whitespace-pre-wrap break-words">{streamBuffer}</div>
+            </Card>
+          )}
+          {loading && !streamBuffer && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Generazione in corso…
+            </div>
+          )}
         </div>
       )}
 
@@ -304,7 +433,7 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
         <div className="p-2 border-t">
           <div className="flex gap-2">
             <Input
-              placeholder="Chiedi di analizzare gli errori…"
+              placeholder="Scrivi la tua domanda…"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
