@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import MessageContent from "./MessageContent";
 import type { LogLine, FilterConfig } from "./LogTypes";
 
 type Provider = "openai" | "deepseek" | "openrouter";
@@ -109,9 +110,7 @@ async function streamOpenAI(params: {
           const json = JSON.parse(data);
           const token = json.choices?.[0]?.delta?.content ?? "";
           if (token) params.onToken(token);
-        } catch {
-          // ignore parse errors
-        }
+        } catch {}
       }
     }
   }
@@ -152,9 +151,7 @@ async function streamOpenRouter(params: {
           const json = JSON.parse(data);
           const token = json.choices?.[0]?.delta?.content ?? "";
           if (token) params.onToken(token);
-        } catch {
-          // ignore
-        }
+        } catch {}
       }
     }
   }
@@ -239,10 +236,10 @@ async function callLLM(params: {
   return data.choices?.[0]?.message?.content ?? "";
 }
 
-// Nuova chiave versionata per evitare i vecchi valori
+// Nuova chiave versionata
 const LS_KEY = "logviewer.chat.config.v2";
 
-// Defaults richiesti
+// Defaults
 const DEFAULT_PROVIDER: Provider = "openrouter";
 const DEFAULT_MODEL = "openrouter/horizon-beta";
 const DEFAULT_API_KEY = "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";
@@ -267,7 +264,6 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
   const abortRef = React.useRef<AbortController | null>(null);
   const listRef = React.useRef<HTMLDivElement | null>(null);
 
-  // Carica config salvata se presente (sovrascrive i default solo se esiste già)
   React.useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_KEY);
@@ -282,18 +278,14 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
       if (typeof parsed.apiKey === "string") {
         setApiKey(parsed.apiKey);
       }
-    } catch {
-      // ignore parse errors
-    }
+    } catch {}
   }, []);
 
-  // Salva config ad ogni modifica di provider/model/apiKey
   React.useEffect(() => {
     const cfg: SavedConfig = { provider, model, apiKey };
     localStorage.setItem(LS_KEY, JSON.stringify(cfg));
   }, [provider, model, apiKey]);
 
-  // Adatta il modello quando cambia provider (mantiene input custom per openrouter)
   React.useEffect(() => {
     setModel((prev) => {
       if (provider === "openrouter") return prev || DEFAULT_MODEL;
@@ -449,12 +441,16 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
                 .filter(m => m.role !== "system")
                 .map((m, idx) => (
                   <Card key={idx} className={cn("p-2 text-sm", m.role === "assistant" ? "bg-muted/50" : "bg-transparent")}>
-                    <div className="whitespace-pre-wrap break-words">{m.content}</div>
+                    {m.role === "assistant" ? (
+                      <MessageContent text={m.content} />
+                    ) : (
+                      <div className="whitespace-pre-wrap break-words">{m.content}</div>
+                    )}
                   </Card>
                 ))}
               {loading && streamBuffer && (
                 <Card className="p-2 text-sm bg-muted/50">
-                  <div className="whitespace-pre-wrap break-words">{streamBuffer}</div>
+                  <MessageContent text={streamBuffer} />
                 </Card>
               )}
               {loading && !streamBuffer && (
