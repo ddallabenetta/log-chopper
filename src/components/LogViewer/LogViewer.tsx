@@ -240,11 +240,12 @@ export default function LogViewer() {
       }
       return prev;
     });
+    toast.message(`Max righe: ${v.toLocaleString()}`);
   };
 
   return (
-    <Card className="w-screen h-screen max-w-none rounded-none border-0 flex flex-col">
-      <CardHeader className="pb-4">
+    <Card className="w-full h-[100dvh] max-w-none rounded-none border-0 flex flex-col overflow-hidden">
+      <CardHeader className="pb-4 px-4 sm:px-6">
         <CardTitle>Log Viewer</CardTitle>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col gap-4 overflow-hidden px-4 sm:px-6">
@@ -274,7 +275,7 @@ export default function LogViewer() {
             />
           </label>
           {ingesting && <span>Import in corso…</span>}
-          {ingestStats.length > 0 && (
+          {igestStats.length > 0 && (
             <span>
               File importati: {ingestStats.length} • Scartate (globali per step): potrebbero essere applicati limiti di memoria
             </span>
@@ -282,7 +283,7 @@ export default function LogViewer() {
         </div>
 
         <div
-          className={`flex-1 min-h-0 rounded-md border relative ${
+          className={`flex-1 min-h-0 rounded-md border relative overflow-x-hidden ${
             isDragging ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""
           }`}
           onDragOver={onDragOver}
