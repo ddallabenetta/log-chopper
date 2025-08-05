@@ -3,10 +3,12 @@ import LogViewer from "@/components/LogViewer/LogViewer";
 
 export default function Home() {
   return (
-    <div className="min-h-screen p-3 sm:p-6">
-      <main className="mx-auto max-w-7xl">
+    <div className="h-screen p-3 sm:p-6">
+      <main className="mx-auto max-w-7xl h-full">
         <h1 className="text-xl sm:text-2xl font-semibold mb-3">Log Analyzer</h1>
-        <LogViewer />
+        <div className="h-[calc(100%-2.5rem)]"> 
+          <LogViewer />
+        </div>
       </main>
       <div className="mt-4">
         <MadeWithDyad />
