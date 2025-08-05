@@ -4,6 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import LogControls from "./LogControls";
 import LogList from "./LogList";
 import ChatSidebar from "./ChatSidebar";
@@ -210,11 +211,7 @@ export default function LogViewer() {
 
     // scroll automatico in fondo dopo import
     queueMicrotask(() => {
-      const scrollers = document.querySelectorAll('[data-radix-scroll-area-viewport], .overflow-auto');
-      const el = (scrollers[scrollers.length - 1] as HTMLElement) || null;
-      if (el) {
-        el.scrollTop = el.scrollHeight - el.clientHeight;
-      }
+      scrollListToBottom();
       persistAll();
     });
   };
@@ -335,6 +332,15 @@ export default function LogViewer() {
     return () => clearTimeout(h);
   }, [allLines, files, maxLines, persistAll]);
 
+  // Funzione per scorrere al fondo della lista
+  const scrollListToBottom = () => {
+    const scrollers = document.querySelectorAll('[data-radix-scroll-area-viewport], .overflow-auto');
+    const el = (scrollers[scrollers.length - 1] as HTMLElement) || null;
+    if (el) {
+      el.scrollTop = el.scrollHeight - el.clientHeight;
+    }
+  };
+
   return (
     <Card className="w-screen h-[calc(100vh-56px)] max-w-none rounded-none border-0 flex flex-col overflow-hidden">
       {isRestoring && (
@@ -366,7 +372,7 @@ export default function LogViewer() {
           />
         </div>
 
-        <div className="shrink-0 px-3 pb-2 text-xs text-muted-foreground">
+        <div className="shrink-0 px-3 pb-2 text-xs text-muted-foreground flex items-center justify-between gap-2">
           <label className="flex items-center gap-2">
             Max righe
             <Input
@@ -379,9 +385,15 @@ export default function LogViewer() {
               className="h-8 w-28"
             />
           </label>
-          {ingesting && <span className="ml-3">Import in corso…</span>}
+          {allLines.length > 0 && (
+            <Button size="sm" variant="outline" onClick={scrollListToBottom}>
+              Vai in fondo
+            </Button>
+          )}
+          <div className="flex-1" />
+          {ingesting && <span>Import in corso…</span>}
           {ingestStats.length > 0 && (
-            <span className="ml-3">File importati: {ingestStats.length}</span>
+            <span>File importati: {ingestStats.length}</span>
           )}
         </div>
 
