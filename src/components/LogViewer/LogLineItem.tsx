@@ -12,6 +12,23 @@ type Props = {
   highlightRanges: Array<{ start: number; end: number }>;
 };
 
+function levelDotClass(level: LogLine["level"]) {
+  switch (level) {
+    case "ERROR":
+      return "bg-red-500";
+    case "WARN":
+      return "bg-yellow-500";
+    case "INFO":
+      return "bg-blue-500";
+    case "DEBUG":
+      return "bg-emerald-500";
+    case "TRACE":
+      return "bg-purple-500";
+    default:
+      return "bg-gray-400";
+  }
+}
+
 export default function LogLineItem({
   line,
   isPinned,
@@ -45,10 +62,13 @@ export default function LogLineItem({
   return (
     <div className="flex items-start gap-3 px-3 py-1.5 hover:bg-accent/50 rounded">
       <div
-        className="shrink-0 basis-44 max-w-[40%] text-xs text-muted-foreground tabular-nums font-mono overflow-hidden text-ellipsis whitespace-nowrap"
+        className="shrink-0 basis-56 max-w-[50%] text-xs text-muted-foreground tabular-nums font-mono overflow-hidden text-ellipsis whitespace-nowrap flex items-center gap-2"
         title={`${line.fileName}:${line.lineNumber}`}
       >
-        {line.fileName}:{line.lineNumber}
+        <span className={`inline-block h-2.5 w-2.5 rounded-full ${levelDotClass(line.level)}`} aria-hidden />
+        <span className="text-foreground/80">{line.lineNumber}</span>
+        <span className="text-muted-foreground">•</span>
+        <span className="truncate">{line.fileName}:{line.lineNumber}</span>
       </div>
 
       <div className="flex-1 min-w-0 text-sm whitespace-pre-wrap break-words" aria-label={`log-${line.id}`}>
