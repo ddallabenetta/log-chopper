@@ -67,6 +67,7 @@ export default function LogViewer() {
   const [isDragging, setIsDragging] = React.useState(false);
   const [ingesting, setIngesting] = React.useState(false);
   const [ingestStats, setIngestStats] = React.useState<FileIngestStats[]>([]);
+  const [isRestoring, setIsRestoring] = React.useState(false);
 
   const [pendingJumpId, setPendingJumpId] = React.useState<string | null>(null);
   const pendingOlderRef = React.useRef<LogLine[]>([]);
@@ -74,34 +75,34 @@ export default function LogViewer() {
   // Caricamento stato persistito
   React.useEffect(() => {
     (async () => {
+      setIsRestoring(true);
       const saved = await idbLoadState();
-      if (!saved) return;
-      // Ricostruisci stato
-      const restoredLines: LogLine[] = saved.allLines.map((l) => ({
-        id: l.id,
-        fileName: l.fileName,
-        lineNumber: l.lineNumber,
-        content: l.content,
-        level: (l.level as LogLevel) || "OTHER",
-      }));
-      setAllLines(restoredLines);
-      setFiles(
-        saved.files.map((f) => ({
-          fileName: f.fileName,
-          lines: restoredLines.filter((l) => l.fileName === f.fileName),
-          totalLines: f.totalLines,
-        }))
-      );
-      setPinned(new Set(saved.pinnedIds));
-      setMaxLines(saved.maxLines || 50000);
-      // Buffer older per caricamenti incrementali dall'alto
-      pendingOlderRef.current = restoredLines.slice();
-      toast.message("Log ripristinati dalla memoria locale");
+      if (saved) {
+        const restoredLines: LogLine[] = saved.allLines.map((l) => ({
+          id: l.id,
+          fileName: l.fileName,
+          lineNumber: l.lineNumber,
+          content: l.content,
+          level: (l.level as LogLevel) || "OTHER",
+        }));
+        setAllLines(restoredLines);
+        setFiles(
+          saved.files.map((f) => ({
+            fileName: f.fileName,
+            lines: restoredLines.filter((l) => l.fileName === f.fileName),
+            totalLines: f.totalLines,
+          }))
+        );
+        setPinned(new Set(saved.pinnedIds));
+        setMaxLines(saved.maxLines || 50000);
+        pendingOlderRef.current = restoredLines.slice();
+        toast.message("Log ripristinati dalla memoria locale");
+      }
+      setIsRestoring(false);
     })();
   }, []);
 
   const persistAll = React.useCallback(async () => {
-    // Prepara forma per idb
     const allLinesIdb = allLines.map((l) => ({
       id: l.id,
       fileName: l.fileName,
@@ -120,8 +121,7 @@ export default function LogViewer() {
   }, [allLines, pinned, files, maxLines]);
 
   const addFiles = async (list: FileList | File[]) => {
-    // Richiesta: ogni nuovo caricamento deve svuotare i precedenti
-    clearAll(false); // non mostrare toast "Pulito" qui
+    clearAll(false);
 
     const arr = Array.from(list);
     if (arr.length === 0) return;
@@ -177,7 +177,7 @@ export default function LogViewer() {
         return merged;
       });
 
-      pendingOlderRef.current = [...linesForFile]; // buffer dai nuovi file
+      pendingOlderRef.current = [...linesForFile];
       newParsedFiles.push({
         fileName,
         lines: linesForFile.slice(-Math.min(linesForFile.length, maxLines)),
@@ -197,7 +197,6 @@ export default function LogViewer() {
     setIngesting(false);
     toast.success(`${arr.length} file caricati (stream)`);
 
-    // Persisti tutto lo stato aggiornato (attendi che setState sia applicato con microtask)
     queueMicrotask(() => persistAll());
   };
 
@@ -211,7 +210,6 @@ export default function LogViewer() {
       if (next.has(id)) next.delete(id);
       else next.add(id);
       const pinnedIds = Array.from(next);
-      // aggiorna subito su idb (best-effort)
       idbUpdatePinned(pinnedIds);
       return next;
     });
@@ -226,9 +224,6 @@ export default function LogViewer() {
     setIngestStats([]);
     pendingOlderRef.current = [];
     if (showToast) toast.message("Pulito");
-    // pulizia storage
-    // idbSaveState con stato vuoto equivale a clear; usiamo clear per rapidità
-    // import dinamico per evitare attese: qui basta richiamare idbClearAll
     import("@/lib/idb").then((m) => m.idbClearAll());
   };
 
@@ -309,13 +304,11 @@ export default function LogViewer() {
       return prev;
     });
     toast.message(`Max righe: ${v.toLocaleString()}`);
-    // aggiorna persistenza dopo il cambio
     queueMicrotask(() => persistAll());
   };
 
   const pinnedIds = React.useMemo(() => Array.from(pinned), [pinned]);
 
-  // Salva allo smontaggio o quando cambia lo stato rilevante in modo debounced
   React.useEffect(() => {
     const h = setTimeout(() => {
       void persistAll();
@@ -325,6 +318,18 @@ export default function LogViewer() {
 
   return (
     <Card className="w-screen h-[calc(100vh-56px)] max-w-none rounded-none border-0 flex flex-col overflow-hidden">
+      {isRestoring && (
+        <div className="w-full h-1 bg-secondary relative overflow-hidden">
+          <div className="absolute inset-0 animate-[shimmer_1.2s_linear_infinite] bg-gradient-to-r from-transparent via-primary/60 to-transparent" />
+          <style jsx>{`
+            @keyframes shimmer {
+              0% { transform: translateX(-100%); }
+              100% { transform: translateX(100%); }
+            }
+            div[style*="shimmer"] {}
+          `}</style>
+        </div>
+      )}
       <CardContent className="flex-1 min-h-0 flex flex-col overflow-hidden p-0">
         <div className="shrink-0 p-3">
           <LogControls
