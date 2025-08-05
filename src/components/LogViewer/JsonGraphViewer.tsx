@@ -2,17 +2,17 @@
 
 import * as React from "react";
 import * as d3 from "d3";
-import { sugiyama, decrossTwoLayer, coordCenter, Dag, dagStratify } from "d3-dag";
+import { sugiyama, decrossTwoLayer, coordCenter, connect } from "d3-dag";
 
 type Props = {
-  data: unknown; // oggetto/array già parsato
+  data: unknown;
   className?: string;
-  maxNodes?: number; // limite di sicurezza per JSON enormi
+  maxNodes?: number;
 };
 
-// Converte JSON in una lista di nodi con id e parentId per d3-dag
 type FlatNode = { id: string; parentId?: string; label: string };
 
+// Appiattisce un JSON in nodi con id parentId
 function flattenJsonToNodes(value: unknown, rootId = "root", maxNodes = 500): FlatNode[] {
   const out: FlatNode[] = [];
   let count = 0;
@@ -25,14 +25,13 @@ function flattenJsonToNodes(value: unknown, rootId = "root", maxNodes = 500): Fl
 
   const walk = (val: unknown, id: string, parentId?: string) => {
     if (count >= maxNodes) return;
-    const type = Object.prototype.toString.call(val).slice(8, -1); // es. Object, Array, String
+    const type = Object.prototype.toString.call(val).slice(8, -1);
     let label = "";
     if (val === null) label = "null";
     else if (type === "Object") label = "{ }";
     else if (type === "Array") label = "[ ]";
     else if (type === "String") label = JSON.stringify(val).slice(0, 80);
     else label = String(val).slice(0, 80);
-
     push({ id, parentId, label });
 
     if (val && typeof val === "object") {
@@ -60,30 +59,33 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
   React.useEffect(() => {
     if (!ref.current) return;
 
-    // Clean
     const svg = d3.select(ref.current);
     svg.selectAll("*").remove();
 
-    // Flatten and build dag
+    // Flatten
     const flat = flattenJsonToNodes(data, "root", maxNodes);
     if (flat.length === 0) return;
 
-    // d3-dag expects an array of {id, parentIds[]} or use dagStratify with parentId
-    const dagInput = flat.map((n) => ({ id: n.id, parentIds: n.parentId ? [n.parentId] : [] }));
+    // d3.stratify per creare una gerarchia, poi connect() per ottenere un DAG
+    const stratifier = d3
+      .stratify<{ id: string; parentId?: string }>()
+      .id((d) => d.id)
+      .parentId((d) => d.parentId ?? null);
 
-    let dag: Dag<{ id: string }>;
+    let root: d3.HierarchyNode<{ id: string; parentId?: string }>;
     try {
-      dag = dagStratify()(dagInput);
+      root = stratifier(flat);
     } catch {
-      // fallback: single node
       const g = svg.append("g");
       g.append("text").text("Grafico non disponibile").attr("x", 10).attr("y", 20);
       return;
     }
 
-    // Layout sugiyama
+    // Connetti in DAG
+    const dag = connect()(root);
+
+    // Layout sugiyama con opzioni disponibili
     const layout = sugiyama()
-      .layering(d3.layeringLongestPath())
       .decross(decrossTwoLayer())
       .coord(coordCenter())
       .nodeSize(() => [24, 110]); // [height, width]
@@ -91,7 +93,10 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
     layout(dag);
 
     // compute bounds
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    let minX = Infinity,
+      maxX = -Infinity,
+      minY = Infinity,
+      maxY = -Infinity;
     for (const n of dag.nodes()) {
       const x = (n as any).x as number;
       const y = (n as any).y as number;
@@ -100,21 +105,26 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
       if (y < minY) minY = y;
       if (y > maxY) maxY = y;
     }
-    const width = Math.max(600, (maxY - minY) + 200);
-    const height = Math.max(400, (maxX - minX) + 200);
+    const width = Math.max(600, maxY - minY + 200);
+    const height = Math.max(400, maxX - minX + 200);
     svg.attr("viewBox", `0 0 ${width} ${height}`);
 
     const g = svg.append("g");
 
-    // pan/zoom
-    svg.call(d3.zoom<SVGSVGElement, unknown>().on("zoom", (event) => {
-      g.attr("transform", event.transform.toString());
-    }) as any);
+    // Pan/zoom
+    svg.call(
+      d3
+        .zoom<SVGSVGElement, unknown>()
+        .scaleExtent([0.3, 4])
+        .on("zoom", (event) => {
+          g.attr("transform", event.transform.toString());
+        }) as any
+    );
+
+    // Edges curve
+    const line = d3.line<{ x: number; y: number }>().curve(d3.curveCatmullRom);
 
     // Edges
-    const line = d3.line<{ x: number; y: number }>()
-      .curve(d3.curveCatmullRom);
-
     g.append("g")
       .selectAll("path")
       .data(dag.links())
@@ -134,7 +144,8 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
       .attr("opacity", 0.7);
 
     // Nodes
-    const nodes = g.append("g")
+    const nodes = g
+      .append("g")
       .selectAll("g.node")
       .data(dag.nodes())
       .enter()
@@ -142,7 +153,11 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
       .attr("class", "node")
       .attr("transform", (n: any) => `translate(${n.y},${n.x})`);
 
-    nodes.append("rect")
+    // label lookup
+    const labelMap = new Map(flat.map((n) => [n.id, n.label]));
+
+    nodes
+      .append("rect")
       .attr("x", -80)
       .attr("y", -14)
       .attr("rx", 6)
@@ -152,20 +167,17 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
       .attr("fill", "hsl(var(--card))")
       .attr("stroke", "hsl(var(--border))");
 
-    // label lookup
-    const labelMap = new Map(flat.map(n => [n.id, n.label]));
-
-    nodes.append("text")
+    nodes
+      .append("text")
       .attr("text-anchor", "middle")
       .attr("dominant-baseline", "middle")
       .attr("font-size", 10)
       .attr("fill", "hsl(var(--foreground))")
-      .text((n: any) => labelMap.get(n.data.id) ?? n.data.id);
-
+      .text((n: any) => labelMap.get(n.data.data.id) ?? n.data.data.id);
   }, [data, maxNodes]);
 
   return (
-    <div className={["w-full h-[60vh] border rounded-md bg-background"].filter(Boolean).join(" ")}>
+    <div className={["w-full h-[60vh] border rounded-md bg-background", className].filter(Boolean).join(" ")}>
       <svg ref={ref} className="w-full h-full" />
     </div>
   );
