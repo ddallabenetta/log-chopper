@@ -44,7 +44,6 @@ export default function LogLineItem({
 
   return (
     <div className="flex items-start gap-3 px-3 py-1.5 hover:bg-accent/50 rounded">
-      {/* Colonna sinistra con file:linea */}
       <div
         className="shrink-0 basis-44 max-w-[40%] text-xs text-muted-foreground tabular-nums font-mono overflow-hidden text-ellipsis whitespace-nowrap"
         title={`${line.fileName}:${line.lineNumber}`}
@@ -52,12 +51,10 @@ export default function LogLineItem({
         {line.fileName}:{line.lineNumber}
       </div>
 
-      {/* Contenuto */}
-      <div className="flex-1 min-w-0 text-sm whitespace-pre-wrap break-words">
+      <div className="flex-1 min-w-0 text-sm whitespace-pre-wrap break-words" aria-label={`log-${line.id}`}>
         {renderHighlighted(line.content)}
       </div>
 
-      {/* Azione pin */}
       <div className="shrink-0">
         <Button
           size="icon"

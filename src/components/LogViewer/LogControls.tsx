@@ -1,14 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { Upload, Regex, CaseSensitive, Pin, Filter } from "lucide-react";
+import { Upload, Regex, CaseSensitive, Pin, Filter, Navigation } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import type { FilterConfig, FilterMode, LogLevel } from "./LogTypes";
+import type { FilterConfig, FilterMode } from "./LogTypes";
 
 type Props = {
   filter: FilterConfig;
@@ -20,9 +20,11 @@ type Props = {
   onToggleShowOnlyPinned: () => void;
   onFilesSelected: (files: FileList) => void;
   onClearAll: () => void;
+  pinnedIds?: string[]; // nuovi: elenco righe pin
+  onJumpToId?: (id: string) => void; // navigazione alla riga
 };
 
-const LEVEL_OPTIONS: Array<{ label: string; value: "ALL" | LogLevel }> = [
+const LEVEL_OPTIONS: Array<{ label: string; value: FilterConfig["level"] }> = [
   { label: "Tutti", value: "ALL" },
   { label: "Trace", value: "TRACE" },
   { label: "Debug", value: "DEBUG" },
@@ -42,6 +44,8 @@ export default function LogControls({
   onToggleShowOnlyPinned,
   onFilesSelected,
   onClearAll,
+  pinnedIds = [],
+  onJumpToId,
 }: Props) {
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
@@ -147,6 +151,27 @@ export default function LogControls({
         <Badge>Visibili: {visibleCount}</Badge>
         <Badge variant="outline">Pinned: {pinnedCount}</Badge>
       </div>
+
+      {pinnedIds.length > 0 && (
+        <div className="rounded-md border p-2">
+          <div className="text-xs font-medium mb-1">Pinned</div>
+          <div className="flex flex-wrap gap-2">
+            {pinnedIds.map((id) => (
+              <Button
+                key={id}
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1"
+                onClick={() => onJumpToId?.(id)}
+                title={`Vai a ${id}`}
+              >
+                <Navigation className="h-3.5 w-3.5" />
+                {id}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -10,6 +10,9 @@ type Props = {
   onTogglePin: (id: string) => void;
   filter: FilterConfig;
   showOnlyPinned: boolean;
+  onLoadMoreTop?: () => void; // lazy load verso l'alto
+  jumpToId?: string | null; // richiesta di jump esterna
+  onAfterJump?: () => void; // reset richiesta jump
 };
 
 function buildMatcher(filter: FilterConfig): ((text: string) => { match: boolean; ranges: { start: number; end: number }[] }) {
@@ -56,6 +59,9 @@ export default function LogList({
   onTogglePin,
   filter,
   showOnlyPinned,
+  onLoadMoreTop,
+  jumpToId,
+  onAfterJump,
 }: Props) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -91,13 +97,20 @@ export default function LogList({
   const overscan = 20; // righe extra sopra/sotto
 
   const [viewport, setViewport] = React.useState({ height: 0, scrollTop: 0 });
+  const [didInitScrollBottom, setDidInitScrollBottom] = React.useState(false);
 
+  // Setup scroll e observer
   React.useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
     const onScroll = () => {
       setViewport({ height: el.clientHeight, scrollTop: el.scrollTop });
+
+      // Lazy load verso l'alto
+      if (onLoadMoreTop && el.scrollTop < 50) {
+        onLoadMoreTop();
+      }
     };
 
     setViewport({ height: el.clientHeight, scrollTop: el.scrollTop });
@@ -110,8 +123,35 @@ export default function LogList({
       el.removeEventListener("scroll", onScroll);
       ro.disconnect();
     };
-  }, []);
+  }, [onLoadMoreTop]);
 
+  // Scroll iniziale in basso per mostrare le righe più recenti
+  React.useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (!didInitScrollBottom && filtered.length > 0) {
+      el.scrollTop = el.scrollHeight;
+      setDidInitScrollBottom(true);
+      setViewport({ height: el.clientHeight, scrollTop: el.scrollTop });
+    }
+  }, [filtered.length, didInitScrollBottom]);
+
+  // Jump a una riga specifica
+  React.useEffect(() => {
+    if (!jumpToId) return;
+    const el = containerRef.current;
+    if (!el) return;
+
+    const idx = filtered.findIndex((l) => l.id === jumpToId);
+    if (idx >= 0) {
+      const targetTop = idx * rowHeight - viewport.height / 2;
+      el.scrollTop = Math.max(0, targetTop);
+      setViewport({ height: el.clientHeight, scrollTop: el.scrollTop });
+    }
+    onAfterJump && onAfterJump();
+  }, [jumpToId, filtered, onAfterJump, viewport.height]);
+
+  // Virtualizzazione base
   const total = filtered.length;
   const startIndex = Math.max(0, Math.floor(viewport.scrollTop / rowHeight) - overscan);
   const endIndex = Math.min(
@@ -131,15 +171,23 @@ export default function LogList({
         ) : (
           <div style={{ height: totalHeight + "px", position: "relative" }}>
             <div style={{ position: "absolute", top: offsetY + "px", left: 0, right: 0 }}>
-              {items.map((line) => (
-                <LogLineItem
-                  key={line.id}
-                  line={line}
-                  isPinned={pinned.has(line.id)}
-                  onTogglePin={onTogglePin}
-                  highlightRanges={highlightMap.get(line.id) ?? []}
-                />
-              ))}
+              {items.map((line, i) => {
+                const isEven = (startIndex + i) % 2 === 0;
+                return (
+                  <div
+                    key={line.id}
+                    className={isEven ? "bg-muted/30" : "bg-transparent"}
+                    data-row-id={line.id}
+                  >
+                    <LogLineItem
+                      line={line}
+                      isPinned={pinned.has(line.id)}
+                      onTogglePin={onTogglePin}
+                      highlightRanges={highlightMap.get(line.id) ?? []}
+                    />
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

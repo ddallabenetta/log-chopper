@@ -66,20 +66,26 @@ export default function LogViewer() {
   const [ingesting, setIngesting] = React.useState(false);
   const [ingestStats, setIngestStats] = React.useState<FileIngestStats[]>([]);
 
+  // Gestione jump-to-id
+  const [pendingJumpId, setPendingJumpId] = React.useState<string | null>(null);
+
+  // Lazy buffer per caricamento verso l'alto
+  const pendingOlderRef = React.useRef<LogLine[]>([]);
+
   const addFiles = async (list: FileList | File[]) => {
     const arr = Array.from(list);
     if (arr.length === 0) return;
     setIngesting(true);
     const newStats: FileIngestStats[] = [];
     const newParsedFiles: ParsedFile[] = [];
-    const newLines: LogLine[] = [];
+    const newLinesAll: LogLine[] = [];
 
     for (const f of arr) {
       const fileName = f.name;
-      let index = 0;
       let totalLines = 0;
       let dropped = 0;
       const linesForFile: LogLine[] = [];
+      const batch: LogLine[] = [];
       for await (const rawLine of streamLines(f)) {
         totalLines++;
         const lineObj: LogLine = {
@@ -91,43 +97,52 @@ export default function LogViewer() {
         };
 
         linesForFile.push(lineObj);
-        newLines.push(lineObj);
+        batch.push(lineObj);
+        newLinesAll.push(lineObj);
 
-        if (newLines.length > maxLines) {
-          const removeCount = newLines.length - maxLines;
+        if (newLinesAll.length > maxLines) {
+          const removeCount = newLinesAll.length - maxLines;
           dropped += removeCount;
-          newLines.splice(0, removeCount);
+          newLinesAll.splice(0, removeCount);
         }
 
-        index++;
-        if (index % 5000 === 0) {
+        // Pubblica a piccoli batch per non bloccare
+        if (batch.length >= 2000) {
+          const publish = batch.splice(0, batch.length);
           setAllLines((prev) => {
-            const merged = [...prev, ...newLines];
+            const merged = [...prev, ...publish];
             if (merged.length > maxLines) {
               merged.splice(0, merged.length - maxLines);
             }
             return merged;
           });
-          setIngestStats((prev) => {
-            const copy = prev.slice();
-            const existing = copy.find((s) => s.fileName === fileName);
-            const partial: FileIngestStats = {
-              fileName,
-              totalLines,
-              droppedLines: dropped,
-            };
-            if (existing) {
-              existing.totalLines = totalLines;
-              existing.droppedLines = dropped;
-            } else {
-              copy.push(partial);
-            }
-            return copy;
-          });
           await new Promise((r) => setTimeout(r));
         }
       }
 
+      // Pubblica eventuale batch residuo
+      if (pendingOlderRef.current.length === 0) {
+        // Prima importazione: mostriamo la coda (recenti) subito
+        setAllLines((prev) => {
+          const merged = [...prev, ...batch, ...[]];
+          if (merged.length > maxLines) {
+            merged.splice(0, merged.length - maxLines);
+          }
+          return merged;
+        });
+      } else {
+        // Se ci sono già righe, accodiamo il batch residuo
+        setAllLines((prev) => {
+          const merged = [...prev, ...batch];
+          if (merged.length > maxLines) {
+            merged.splice(0, merged.length - maxLines);
+          }
+          return merged;
+        });
+      }
+
+      // Mettiamo le righe più vecchie nel buffer per lazy load verso l'alto
+      pendingOlderRef.current.unshift(...linesForFile); // più vecchie in testa
       newParsedFiles.push({
         fileName,
         lines: linesForFile.slice(-Math.min(linesForFile.length, maxLines)),
@@ -141,14 +156,14 @@ export default function LogViewer() {
       });
     }
 
+    // Manteniamo solo le più recenti visibili, quelle iniziali restano nel buffer older
+    if (pendingOlderRef.current.length > maxLines) {
+      pendingOlderRef.current = pendingOlderRef.current.slice(
+        Math.max(0, pendingOlderRef.current.length - maxLines - allLines.length)
+      );
+    }
+
     setFiles((prev) => [...prev, ...newParsedFiles]);
-    setAllLines((prev) => {
-      const merged = [...prev, ...newLines];
-      if (merged.length > maxLines) {
-        merged.splice(0, merged.length - maxLines);
-      }
-      return merged;
-    });
     setIngestStats((prev) => {
       const map = new Map<string, FileIngestStats>();
       [...prev, ...newStats].forEach((s) => map.set(s.fileName, s));
@@ -179,6 +194,7 @@ export default function LogViewer() {
     setFilter({ query: "", mode: "text", caseSensitive: false, level: "ALL" });
     setShowOnlyPinned(false);
     setIngestStats([]);
+    pendingOlderRef.current = [];
     toast.message("Pulito");
   };
 
@@ -213,6 +229,26 @@ export default function LogViewer() {
     }
   }, [allLines, filter, pinned, showOnlyPinned]);
 
+  // Lazy load verso l'alto quando richiesto da LogList
+  const handleLoadMoreTop = () => {
+    if (pendingOlderRef.current.length === 0) return;
+    const take = 2000;
+    const slice = pendingOlderRef.current.splice(
+      Math.max(0, pendingOlderRef.current.length - take),
+      take
+    );
+    if (slice.length === 0) return;
+
+    // Inseriamo all'inizio mantenendo le più recenti in coda
+    setAllLines((prev) => {
+      const merged = [...slice, ...prev];
+      if (merged.length > maxLines) {
+        merged.splice(0, merged.length - maxLines); // taglia le più vecchie
+      }
+      return merged;
+    });
+  };
+
   const onDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
@@ -243,6 +279,8 @@ export default function LogViewer() {
     toast.message(`Max righe: ${v.toLocaleString()}`);
   };
 
+  const pinnedIds = React.useMemo(() => Array.from(pinned), [pinned]);
+
   return (
     <Card className="w-full h-[100dvh] max-w-none rounded-none border-0 flex flex-col overflow-hidden">
       <CardHeader className="pb-4 px-4 sm:px-6">
@@ -259,6 +297,8 @@ export default function LogViewer() {
           onToggleShowOnlyPinned={() => setShowOnlyPinned((v) => !v)}
           onFilesSelected={handleFilesSelected}
           onClearAll={clearAll}
+          pinnedIds={pinnedIds}
+          onJumpToId={(id) => setPendingJumpId(id)}
         />
 
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -303,6 +343,9 @@ export default function LogViewer() {
             onTogglePin={togglePin}
             filter={filter}
             showOnlyPinned={showOnlyPinned}
+            onLoadMoreTop={handleLoadMoreTop}
+            jumpToId={pendingJumpId}
+            onAfterJump={() => setPendingJumpId(null)}
           />
         </div>
       </CardContent>
