@@ -83,7 +83,12 @@ export default function MessageContent({ text, className }: Props) {
       const linkMatch = rest.match(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/);
 
       // Trova la prima occorrenza tra code/bold/link
-      const candidates: Array<{ type: "code" | "bold" | "link"; start: number; match: RegExpMatchArray | null }> = [
+      type Candidate = {
+        type: "code" | "bold" | "link";
+        start: number;
+        match: RegExpMatchArray | null;
+      };
+      const candidates: Candidate[] = [
         { type: "code", start: codeMatch ? codeMatch.index ?? -1 : -1, match: codeMatch },
         { type: "bold", start: boldMatch ? boldMatch.index ?? -1 : -1, match: boldMatch },
         { type: "link", start: linkMatch ? linkMatch.index ?? -1 : -1, match: linkMatch },
