@@ -89,7 +89,6 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
 
   React.useEffect(() => {
     if (!open) return;
-    // reset vista a testo ogni volta che si apre
     setView("text");
   }, [open, line?.id]);
 
@@ -159,7 +158,7 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
                   />
                 )}
                 {extraction.kind === "full" && (
-                  <pre className="max-h-[60vh] overflow-auto rounded-md bg-muted p-3 text-xs font-mono whitespace-pre">
+                  <pre className="w-full max-h-[60vh] overflow-y-auto overflow-x-auto rounded-md bg-muted p-3 text-xs font-mono whitespace-pre">
                     {extraction.formatted}
                   </pre>
                 )}
@@ -172,7 +171,7 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
                         value={extraction.prefix}
                       />
                     )}
-                    <pre className="max-h-[50vh] overflow-auto rounded-md bg-muted p-3 text-xs font-mono whitespace-pre">
+                    <pre className="w-full max-h-[50vh] overflow-y-auto overflow-x-auto rounded-md bg-muted p-3 text-xs font-mono whitespace-pre">
                       {extraction.formatted}
                     </pre>
                     {extraction.suffix && (
