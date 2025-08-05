@@ -35,7 +35,6 @@ async function* streamLines(file: File): AsyncGenerator<string, void, unknown> {
     ({ value, done } = await reader.read());
     chunk = value ? decoder.decode(value, { stream: true }) : "";
   }
-  // flush finale
   const tail = decoder.decode();
   if (tail) buffer += tail;
   if (buffer.length > 0) {
@@ -61,10 +60,8 @@ export default function LogViewer() {
   });
   const [showOnlyPinned, setShowOnlyPinned] = React.useState(false);
 
-  // Performance settings
   const [maxLines, setMaxLines] = React.useState<number>(50000);
 
-  // Progress UI
   const [isDragging, setIsDragging] = React.useState(false);
   const [ingesting, setIngesting] = React.useState(false);
   const [ingestStats, setIngestStats] = React.useState<FileIngestStats[]>([]);
@@ -96,14 +93,12 @@ export default function LogViewer() {
         linesForFile.push(lineObj);
         newLines.push(lineObj);
 
-        // Mantieni solo le ultime maxLines globalmente
         if (newLines.length > maxLines) {
           const removeCount = newLines.length - maxLines;
           dropped += removeCount;
           newLines.splice(0, removeCount);
         }
 
-        // Aggiorna UI a batch per non bloccare
         index++;
         if (index % 5000 === 0) {
           setAllLines((prev) => {
@@ -133,7 +128,6 @@ export default function LogViewer() {
         }
       }
 
-      // File finished
       newParsedFiles.push({
         fileName,
         lines: linesForFile.slice(-Math.min(linesForFile.length, maxLines)),
@@ -147,7 +141,6 @@ export default function LogViewer() {
       });
     }
 
-    // Commit finale
     setFiles((prev) => [...prev, ...newParsedFiles]);
     setAllLines((prev) => {
       const merged = [...prev, ...newLines];
@@ -157,7 +150,6 @@ export default function LogViewer() {
       return merged;
     });
     setIngestStats((prev) => {
-      // merge by fileName
       const map = new Map<string, FileIngestStats>();
       [...prev, ...newStats].forEach((s) => map.set(s.fileName, s));
       return Array.from(map.values());
@@ -221,7 +213,6 @@ export default function LogViewer() {
     }
   }, [allLines, filter, pinned, showOnlyPinned]);
 
-  // Drag & Drop handlers (zona lista)
   const onDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
@@ -240,7 +231,6 @@ export default function LogViewer() {
     }
   };
 
-  // Gestione cambio maxLines: limita subito l'array
   const onChangeMaxLines = (val: number) => {
     const v = Math.max(1000, Math.min(500000, Math.floor(val)));
     setMaxLines(v);
@@ -253,12 +243,15 @@ export default function LogViewer() {
     toast.message(`Max righe: ${v.toLocaleString()}`);
   };
 
+  // Stato drag
+  const [isDragging, setIsDragging] = React.useState(false);
+
   return (
-    <Card className="w-full h-[calc(100vh-6rem)] sm:h-[calc(100vh-8rem)] flex flex-col">
+    <Card className="w-screen h-screen max-w-none rounded-none border-0 flex flex-col">
       <CardHeader className="pb-4">
         <CardTitle>Log Viewer</CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col gap-4 overflow-hidden">
+      <CardContent className="flex-1 flex flex-col gap-4 overflow-hidden px-4 sm:px-6">
         <LogControls
           filter={filter}
           onFilterChange={setFilter}
@@ -272,25 +265,25 @@ export default function LogViewer() {
         />
 
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <label className="flex items-center gap-2">
-            Max righe
-            <Input
-              type="number"
-              min={1000}
-              max={500000}
-              step={1000}
-              value={maxLines}
-              onChange={(e) => onChangeMaxLines(Number(e.target.value))}
-              className="h-8 w-28"
-            />
-          </label>
-          {ingesting && <span>Import in corso…</span>}
-          {ingestStats.length > 0 && (
-            <span>
-              File importati: {ingestStats.length} • Scartate (globali per step): potrebbero essere applicati limiti di memoria
-            </span>
-          )}
-        </div>
+            <label className="flex items-center gap-2">
+              Max righe
+              <Input
+                type="number"
+                min={1000}
+                max={500000}
+                step={1000}
+                value={maxLines}
+                onChange={(e) => onChangeMaxLines(Number(e.target.value))}
+                className="h-8 w-28"
+              />
+            </label>
+            {ingesting && <span>Import in corso…</span>}
+            {ingestStats.length > 0 && (
+              <span>
+                File importati: {ingestStats.length} • Scartate (globali per step): potrebbero essere applicati limiti di memoria
+              </span>
+            )}
+          </div>
 
         <div
           className={`flex-1 min-h-0 rounded-md border relative ${
