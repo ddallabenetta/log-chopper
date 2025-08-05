@@ -18,7 +18,6 @@ export default function LogLineItem({
   onTogglePin,
   highlightRanges,
 }: Props) {
-  // Render text with highlight spans for match ranges
   const renderHighlighted = (text: string) => {
     if (highlightRanges.length === 0) return <span>{text}</span>;
     const parts: React.ReactNode[] = [];
@@ -44,13 +43,21 @@ export default function LogLineItem({
   };
 
   return (
-    <div className="flex items-start gap-2 px-3 py-1.5 hover:bg-accent/50 rounded">
-      <div className="w-20 shrink-0 text-xs text-muted-foreground tabular-nums">
+    <div className="flex items-start gap-3 px-3 py-1.5 hover:bg-accent/50 rounded">
+      {/* Colonna sinistra con file:linea */}
+      <div
+        className="shrink-0 basis-44 max-w-[40%] text-xs text-muted-foreground tabular-nums font-mono overflow-hidden text-ellipsis whitespace-nowrap"
+        title={`${line.fileName}:${line.lineNumber}`}
+      >
         {line.fileName}:{line.lineNumber}
       </div>
-      <div className="flex-1 text-sm whitespace-pre-wrap break-words">
+
+      {/* Contenuto */}
+      <div className="flex-1 min-w-0 text-sm whitespace-pre-wrap break-words">
         {renderHighlighted(line.content)}
       </div>
+
+      {/* Azione pin */}
       <div className="shrink-0">
         <Button
           size="icon"
