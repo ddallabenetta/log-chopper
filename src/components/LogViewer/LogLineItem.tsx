@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { Pin, PinOff } from "lucide-react";
+import { Pin, PinOff, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { LogLine } from "./LogTypes";
+import LogLineDetailDialog from "./LogLineDetailDialog";
 
 type Props = {
   line: LogLine;
@@ -35,6 +36,8 @@ export default function LogLineItem({
   onTogglePin,
   highlightRanges,
 }: Props) {
+  const [detailOpen, setDetailOpen] = React.useState(false);
+
   const renderHighlighted = (text: string) => {
     if (highlightRanges.length === 0) return <span>{text}</span>;
     const parts: React.ReactNode[] = [];
@@ -60,31 +63,47 @@ export default function LogLineItem({
   };
 
   return (
-    <div className="flex items-start gap-3 px-3 py-1.5 hover:bg-accent/50 rounded">
-      <div
-        className="shrink-0 basis-56 max-w-[50%] text-xs text-muted-foreground tabular-nums font-mono overflow-hidden text-ellipsis whitespace-nowrap flex items-center gap-2"
-        title={`${line.fileName}:${line.lineNumber}`}
-      >
-        <span className={`inline-block h-2.5 w-2.5 rounded-full ${levelDotClass(line.level)}`} aria-hidden />
-        <span className="text-foreground/80">{line.lineNumber}</span>
-        <span className="text-muted-foreground">•</span>
-        <span className="truncate">{line.fileName}:{line.lineNumber}</span>
-      </div>
-
-      <div className="flex-1 min-w-0 text-sm whitespace-pre-wrap break-words" aria-label={`log-${line.id}`}>
-        {renderHighlighted(line.content)}
-      </div>
-
-      <div className="shrink-0">
-        <Button
-          size="icon"
-          variant={isPinned ? "default" : "ghost"}
-          onClick={() => onTogglePin(line.id)}
-          title={isPinned ? "Rimuovi pin" : "Pin riga"}
+    <>
+      <div className="flex items-start gap-3 px-3 py-1.5 hover:bg-accent/50 rounded">
+        <div
+          className="shrink-0 basis-56 max-w-[50%] text-xs text-muted-foreground tabular-nums font-mono overflow-hidden text-ellipsis whitespace-nowrap flex items-center gap-2"
+          title={`${line.fileName}:${line.lineNumber}`}
         >
-          {isPinned ? <Pin className="h-4 w-4" /> : <PinOff className="h-4 w-4" />}
-        </Button>
+          <span className={`inline-block h-2.5 w-2.5 rounded-full ${levelDotClass(line.level)}`} aria-hidden />
+          <span className="text-foreground/80">{line.lineNumber}</span>
+          <span className="text-muted-foreground">•</span>
+          <span className="truncate">{line.fileName}:{line.lineNumber}</span>
+        </div>
+
+        <div className="flex-1 min-w-0 text-sm whitespace-pre-wrap break-words" aria-label={`log-${line.id}`}>
+          {renderHighlighted(line.content)}
+        </div>
+
+        <div className="shrink-0 flex items-center gap-1">
+          <Button
+            size="icon"
+            variant={isPinned ? "default" : "ghost"}
+            onClick={() => onTogglePin(line.id)}
+            title={isPinned ? "Rimuovi pin" : "Pin riga"}
+          >
+            {isPinned ? <Pin className="h-4 w-4" /> : <PinOff className="h-4 w-4" />}
+          </Button>
+          <Button
+            size="icon"
+            variant="outline"
+            title="Dettaglio riga"
+            onClick={() => setDetailOpen(true)}
+          >
+            <Info className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
-    </div>
+
+      <LogLineDetailDialog
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        line={detailOpen ? line : null}
+      />
+    </>
   );
 }
