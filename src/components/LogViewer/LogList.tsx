@@ -36,9 +36,9 @@ function buildMatcher(filter: FilterConfig): ((text: string) => { match: boolean
     }
   }
   return (text: string) => {
+    const ranges: { start: number; end: number }[] = [];
     const haystack = filter.caseSensitive ? text : text.toLowerCase();
     const needle = filter.caseSensitive ? filter.query : filter.query.toLowerCase();
-    const ranges: { start: number; end: number }[] = [];
     let from = 0;
     while (true) {
       const idx = haystack.indexOf(needle, from);
@@ -58,13 +58,20 @@ export default function LogList({
   showOnlyPinned,
 }: Props) {
   const matcher = React.useMemo(() => buildMatcher(filter), [filter]);
+
+  const passesLevel = React.useCallback(
+    (lvl: LogLine["level"]) => (filter.level === "ALL" ? true : lvl === filter.level),
+    [filter.level]
+  );
+
   const filtered = React.useMemo(() => {
     return lines.filter((l) => {
       if (showOnlyPinned) return pinned.has(l.id);
+      if (!passesLevel(l.level) && !pinned.has(l.id)) return false;
       const res = matcher(l.content);
       return res.match || pinned.has(l.id);
     });
-  }, [lines, matcher, pinned, showOnlyPinned]);
+  }, [lines, matcher, pinned, showOnlyPinned, passesLevel]);
 
   const highlightMap = React.useMemo(() => {
     const map = new Map<string, { start: number; end: number }[]>();

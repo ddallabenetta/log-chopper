@@ -1,8 +1,11 @@
+export type LogLevel = "TRACE" | "DEBUG" | "INFO" | "WARN" | "ERROR" | "OTHER";
+
 export type LogLine = {
   id: string; // unique: fileName:index
   fileName: string;
   lineNumber: number;
   content: string;
+  level: LogLevel;
 };
 
 export type ParsedFile = {
@@ -17,4 +20,5 @@ export type FilterConfig = {
   query: string;
   mode: FilterMode;
   caseSensitive: boolean;
+  level: "ALL" | LogLevel;
 };

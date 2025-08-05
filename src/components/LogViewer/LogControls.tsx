@@ -1,14 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { Upload, Regex, CaseSensitive, Pin } from "lucide-react";
+import { Upload, Regex, CaseSensitive, Pin, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import type { FilterConfig, FilterMode } from "./LogTypes";
+import type { FilterConfig, FilterMode, LogLevel } from "./LogTypes";
 
 type Props = {
   filter: FilterConfig;
@@ -21,6 +21,16 @@ type Props = {
   onFilesSelected: (files: FileList) => void;
   onClearAll: () => void;
 };
+
+const LEVEL_OPTIONS: Array<{ label: string; value: "ALL" | LogLevel }> = [
+  { label: "Tutti", value: "ALL" },
+  { label: "Trace", value: "TRACE" },
+  { label: "Debug", value: "DEBUG" },
+  { label: "Info", value: "INFO" },
+  { label: "Warn", value: "WARN" },
+  { label: "Error", value: "ERROR" },
+  { label: "Altro", value: "OTHER" },
+];
 
 export default function LogControls({
   filter,
@@ -102,6 +112,24 @@ export default function LogControls({
               onCheckedChange={(v) => onFilterChange({ ...filter, caseSensitive: v })}
             />
           </div>
+
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <select
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
+              value={filter.level}
+              onChange={(e) =>
+                onFilterChange({ ...filter, level: e.target.value as FilterConfig["level"] })
+              }
+            >
+              {LEVEL_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <Button
             variant={showOnlyPinned ? "default" : "outline"}
             onClick={onToggleShowOnlyPinned}
