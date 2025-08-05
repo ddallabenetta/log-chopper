@@ -8,6 +8,7 @@ import LogControls from "./LogControls";
 import LogList from "./LogList";
 import ChatSidebar from "./ChatSidebar";
 import type { FilterConfig, LogLine, ParsedFile, LogLevel } from "./LogTypes";
+import { idbLoadState, idbSaveState, idbUpdatePinned } from "@/lib/idb";
 
 function detectLevel(text: string): LogLevel {
   const t = text.toUpperCase();
@@ -70,7 +71,58 @@ export default function LogViewer() {
   const [pendingJumpId, setPendingJumpId] = React.useState<string | null>(null);
   const pendingOlderRef = React.useRef<LogLine[]>([]);
 
+  // Caricamento stato persistito
+  React.useEffect(() => {
+    (async () => {
+      const saved = await idbLoadState();
+      if (!saved) return;
+      // Ricostruisci stato
+      const restoredLines: LogLine[] = saved.allLines.map((l) => ({
+        id: l.id,
+        fileName: l.fileName,
+        lineNumber: l.lineNumber,
+        content: l.content,
+        level: (l.level as LogLevel) || "OTHER",
+      }));
+      setAllLines(restoredLines);
+      setFiles(
+        saved.files.map((f) => ({
+          fileName: f.fileName,
+          lines: restoredLines.filter((l) => l.fileName === f.fileName),
+          totalLines: f.totalLines,
+        }))
+      );
+      setPinned(new Set(saved.pinnedIds));
+      setMaxLines(saved.maxLines || 50000);
+      // Buffer older per caricamenti incrementali dall'alto
+      pendingOlderRef.current = restoredLines.slice();
+      toast.message("Log ripristinati dalla memoria locale");
+    })();
+  }, []);
+
+  const persistAll = React.useCallback(async () => {
+    // Prepara forma per idb
+    const allLinesIdb = allLines.map((l) => ({
+      id: l.id,
+      fileName: l.fileName,
+      lineNumber: l.lineNumber,
+      content: l.content,
+      level: l.level,
+    }));
+    const pinnedIds = Array.from(pinned);
+    const metaFiles = files.map((f) => ({ fileName: f.fileName, totalLines: f.totalLines }));
+    await idbSaveState({
+      allLines: allLinesIdb,
+      pinnedIds,
+      files: metaFiles,
+      maxLines,
+    });
+  }, [allLines, pinned, files, maxLines]);
+
   const addFiles = async (list: FileList | File[]) => {
+    // Richiesta: ogni nuovo caricamento deve svuotare i precedenti
+    clearAll(false); // non mostrare toast "Pulito" qui
+
     const arr = Array.from(list);
     if (arr.length === 0) return;
     setIngesting(true);
@@ -117,25 +169,15 @@ export default function LogViewer() {
         }
       }
 
-      if (pendingOlderRef.current.length === 0) {
-        setAllLines((prev) => {
-          const merged = [...prev, ...batch, ...[]];
-          if (merged.length > maxLines) {
-            merged.splice(0, merged.length - maxLines);
-          }
-          return merged;
-        });
-      } else {
-        setAllLines((prev) => {
-          const merged = [...prev, ...batch];
-          if (merged.length > maxLines) {
-            merged.splice(0, merged.length - maxLines);
-          }
-          return merged;
-        });
-      }
+      setAllLines((prev) => {
+        const merged = [...prev, ...batch];
+        if (merged.length > maxLines) {
+          merged.splice(0, merged.length - maxLines);
+        }
+        return merged;
+      });
 
-      pendingOlderRef.current.unshift(...linesForFile);
+      pendingOlderRef.current = [...linesForFile]; // buffer dai nuovi file
       newParsedFiles.push({
         fileName,
         lines: linesForFile.slice(-Math.min(linesForFile.length, maxLines)),
@@ -149,21 +191,14 @@ export default function LogViewer() {
       });
     }
 
-    if (pendingOlderRef.current.length > maxLines) {
-      pendingOlderRef.current = pendingOlderRef.current.slice(
-        Math.max(0, pendingOlderRef.current.length - maxLines - allLines.length)
-      );
-    }
-
-    setFiles((prev) => [...prev, ...newParsedFiles]);
-    setIngestStats((prev) => {
-      const map = new Map<string, FileIngestStats>();
-      [...prev, ...newStats].forEach((s) => map.set(s.fileName, s));
-      return Array.from(map.values());
-    });
+    setFiles(newParsedFiles);
+    setIngestStats(newStats);
 
     setIngesting(false);
     toast.success(`${arr.length} file caricati (stream)`);
+
+    // Persisti tutto lo stato aggiornato (attendi che setState sia applicato con microtask)
+    queueMicrotask(() => persistAll());
   };
 
   const handleFilesSelected = async (list: FileList) => {
@@ -175,11 +210,14 @@ export default function LogViewer() {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      const pinnedIds = Array.from(next);
+      // aggiorna subito su idb (best-effort)
+      idbUpdatePinned(pinnedIds);
       return next;
     });
   };
 
-  const clearAll = () => {
+  const clearAll = (showToast = true) => {
     setFiles([]);
     setAllLines([]);
     setPinned(new Set());
@@ -187,7 +225,11 @@ export default function LogViewer() {
     setShowOnlyPinned(false);
     setIngestStats([]);
     pendingOlderRef.current = [];
-    toast.message("Pulito");
+    if (showToast) toast.message("Pulito");
+    // pulizia storage
+    // idbSaveState con stato vuoto equivale a clear; usiamo clear per rapidità
+    // import dinamico per evitare attese: qui basta richiamare idbClearAll
+    import("@/lib/idb").then((m) => m.idbClearAll());
   };
 
   const totalCount = allLines.length;
@@ -267,9 +309,19 @@ export default function LogViewer() {
       return prev;
     });
     toast.message(`Max righe: ${v.toLocaleString()}`);
+    // aggiorna persistenza dopo il cambio
+    queueMicrotask(() => persistAll());
   };
 
   const pinnedIds = React.useMemo(() => Array.from(pinned), [pinned]);
+
+  // Salva allo smontaggio o quando cambia lo stato rilevante in modo debounced
+  React.useEffect(() => {
+    const h = setTimeout(() => {
+      void persistAll();
+    }, 500);
+    return () => clearTimeout(h);
+  }, [allLines, files, maxLines, persistAll]);
 
   return (
     <Card className="w-screen h-[calc(100vh-56px)] max-w-none rounded-none border-0 flex flex-col overflow-hidden">
