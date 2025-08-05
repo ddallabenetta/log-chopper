@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import * as d3 from "d3";
-import { sugiyama, decrossTwoLayer, coordCenter, connect } from "d3-dag";
+import { sugiyama, decrossTwoLayer, coordCenter, hierarchy } from "d3-dag";
 
 type Props = {
   data: unknown;
@@ -66,7 +66,7 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
     const flat = flattenJsonToNodes(data, "root", maxNodes);
     if (flat.length === 0) return;
 
-    // d3.stratify per creare una gerarchia, poi connect() per ottenere un DAG
+    // d3.stratify per creare una gerarchia, poi hierarchy() di d3-dag per ottenere un DAG
     const stratifier = d3
       .stratify<{ id: string; parentId?: string }>()
       .id((d) => d.id)
@@ -81,10 +81,10 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
       return;
     }
 
-    // Connetti in DAG
-    const dag = connect()(root);
+    // Converte in DAG
+    const dag = hierarchy()(root);
 
-    // Layout sugiyama con opzioni disponibili
+    // Layout sugiyama
     const layout = sugiyama()
       .decross(decrossTwoLayer())
       .coord(coordCenter())
