@@ -1,3 +1,4 @@
+ingestStats nel pannello info">
 "use client";
 
 import * as React from "react";
@@ -275,7 +276,7 @@ export default function LogViewer() {
             />
           </label>
           {ingesting && <span>Import in corso…</span>}
-          {igestStats.length > 0 && (
+          {ingestStats.length > 0 && (
             <span>
               File importati: {ingestStats.length} • Scartate (globali per step): potrebbero essere applicati limiti di memoria
             </span>
