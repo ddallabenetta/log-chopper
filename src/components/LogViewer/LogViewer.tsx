@@ -240,11 +240,7 @@ export default function LogViewer() {
       }
       return prev;
     });
-    toast.message(`Max righe: ${v.toLocaleString()}`);
   };
-
-  // Stato drag
-  const [isDragging, setIsDragging] = React.useState(false);
 
   return (
     <Card className="w-screen h-screen max-w-none rounded-none border-0 flex flex-col">
@@ -265,25 +261,25 @@ export default function LogViewer() {
         />
 
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <label className="flex items-center gap-2">
-              Max righe
-              <Input
-                type="number"
-                min={1000}
-                max={500000}
-                step={1000}
-                value={maxLines}
-                onChange={(e) => onChangeMaxLines(Number(e.target.value))}
-                className="h-8 w-28"
-              />
-            </label>
-            {ingesting && <span>Import in corso…</span>}
-            {ingestStats.length > 0 && (
-              <span>
-                File importati: {ingestStats.length} • Scartate (globali per step): potrebbero essere applicati limiti di memoria
-              </span>
-            )}
-          </div>
+          <label className="flex items-center gap-2">
+            Max righe
+            <Input
+              type="number"
+              min={1000}
+              max={500000}
+              step={1000}
+              value={maxLines}
+              onChange={(e) => onChangeMaxLines(Number(e.target.value))}
+              className="h-8 w-28"
+            />
+          </label>
+          {ingesting && <span>Import in corso…</span>}
+          {ingestStats.length > 0 && (
+            <span>
+              File importati: {ingestStats.length} • Scartate (globali per step): potrebbero essere applicati limiti di memoria
+            </span>
+          )}
+        </div>
 
         <div
           className={`flex-1 min-h-0 rounded-md border relative ${
