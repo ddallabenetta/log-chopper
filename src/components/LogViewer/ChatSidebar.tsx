@@ -210,7 +210,6 @@ async function callLLM(params: {
   if (provider === "deepseek") {
     const key = apiKey || getKeyFallback() || (process.env.DEEPSEEK_API_KEY as string | undefined);
     if (!key) throw new Error("DEEPSEEK_API_KEY mancante. Inserisci la chiave nel pannello.");
-    // DeepSeek: non sempre offre SSE compatibile; effettua fallback a risposta completa.
     const res = await fetch("https://api.deepseek.com/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
@@ -222,7 +221,6 @@ async function callLLM(params: {
     return data.choices?.[0]?.message?.content ?? "";
   }
 
-  // openrouter
   const key = apiKey || getKeyFallback() || (process.env.OPENROUTER_API_KEY as string | undefined);
   if (!key) throw new Error("OPENROUTER_API_KEY mancante. Inserisci la chiave nel pannello.");
   if (onToken) {
@@ -240,6 +238,14 @@ async function callLLM(params: {
   return data.choices?.[0]?.message?.content ?? "";
 }
 
+const LS_KEY = "logviewer.chat.config";
+
+type SavedConfig = {
+  provider: Provider;
+  model: string;
+  apiKey: string;
+};
+
 export default function ChatSidebar({ lines, pinnedIds, filter, className }: Props) {
   const [open, setOpen] = React.useState(true);
   const [provider, setProvider] = React.useState<Provider>("openai");
@@ -254,6 +260,33 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
   const abortRef = React.useRef<AbortController | null>(null);
   const listRef = React.useRef<HTMLDivElement | null>(null);
 
+  // Carica config salvata
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Partial<SavedConfig>;
+      if (parsed.provider && ["openai", "deepseek", "openrouter"].includes(parsed.provider)) {
+        setProvider(parsed.provider as Provider);
+      }
+      if (typeof parsed.model === "string" && parsed.model.trim()) {
+        setModel(parsed.model);
+      }
+      if (typeof parsed.apiKey === "string") {
+        setApiKey(parsed.apiKey);
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }, []);
+
+  // Salva config ad ogni modifica di provider/model/apiKey
+  React.useEffect(() => {
+    const cfg: SavedConfig = { provider, model, apiKey };
+    localStorage.setItem(LS_KEY, JSON.stringify(cfg));
+  }, [provider, model, apiKey]);
+
+  // Adatta il modello quando cambia provider (senza sovrascrivere input libero per openrouter)
   React.useEffect(() => {
     setModel((prev) => {
       if (provider === "openrouter") return prev || PROVIDER_MODELS.openrouter.models[0].id;
@@ -273,7 +306,6 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
     const q = (question ?? input).trim();
     if (!q) return;
 
-    // Mostriamo solo ciò che scrivi tu
     setMessages((prev) => [...prev.filter(m => m.role !== "system"), { role: "user", content: q }]);
     setInput("");
     setLoading(true);
@@ -299,7 +331,6 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
     abortRef.current = controller;
 
     try {
-      // Streaming dove possibile
       await callLLM({
         provider,
         model,
@@ -308,9 +339,7 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
         abortSignal: controller.signal,
         onToken: (t) => setStreamBuffer((prev) => prev + t),
       });
-      // Se non c'è streaming (provider fallback), callLLM restituisce testo completo oppure "" (caso stream)
       if (streamBuffer.length === 0) {
-        // Nessun token arrivato via stream: rifacciamo la call senza onToken per ottenere la risposta completa
         const full = await callLLM({
           provider,
           model,
@@ -320,7 +349,6 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
         });
         setMessages((prev) => [...prev, { role: "assistant", content: full }]);
       } else {
-        // Chiudiamo lo stream nella history
         setMessages((prev) => [...prev, { role: "assistant", content: streamBuffer }]);
         setStreamBuffer("");
       }
