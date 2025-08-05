@@ -92,7 +92,7 @@ export default function LogList({
     return map;
   }, [filtered, matcher, showOnlyPinned, filter.query]);
 
-  // Scroll iniziale in fondo quando ci sono elementi
+  // Scroll all'inizio: vai in fondo al primo popolamento
   const didInitScrollBottomRef = React.useRef(false);
   React.useEffect(() => {
     const el = containerRef.current;
@@ -103,6 +103,22 @@ export default function LogList({
         didInitScrollBottomRef.current = true;
       });
     }
+  }, [filtered.length]);
+
+  // Se arrivano nuove righe (incremento lunghezza), resta agganciato al fondo
+  const prevLenRef = React.useRef(0);
+  React.useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (filtered.length > prevLenRef.current) {
+      const atBottom = Math.abs(el.scrollTop + el.clientHeight - el.scrollHeight) < 8;
+      if (atBottom || prevLenRef.current === 0) {
+        requestAnimationFrame(() => {
+          el.scrollTop = el.scrollHeight - el.clientHeight;
+        });
+      }
+    }
+    prevLenRef.current = filtered.length;
   }, [filtered.length]);
 
   // Caricamento top-on-scroll (se fornito)

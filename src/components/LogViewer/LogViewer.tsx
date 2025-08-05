@@ -72,7 +72,7 @@ export default function LogViewer() {
   const [pendingJumpId, setPendingJumpId] = React.useState<string | null>(null);
   const pendingOlderRef = React.useRef<LogLine[]>([]);
 
-  // Caricamento stato persistito: NON troncare le righe, ripristina tutte
+  // Caricamento stato persistito: ripristina tutte le righe e non troncare per file
   React.useEffect(() => {
     (async () => {
       setIsRestoring(true);
@@ -87,7 +87,6 @@ export default function LogViewer() {
         }));
         setAllLines(restoredLines);
 
-        // Ricostruisci files con conteggio totale e lista coerente (senza taglio)
         const byFile = new Map<string, LogLine[]>();
         for (const l of restoredLines) {
           const arr = byFile.get(l.fileName);
@@ -96,7 +95,7 @@ export default function LogViewer() {
         }
         const restoredFiles: ParsedFile[] = Array.from(byFile.entries()).map(([fileName, lines]) => ({
           fileName,
-          lines, // mostra tutte quelle salvate per quel file
+          lines, // nessun slice qui
           totalLines: lines.length,
         }));
         setFiles(restoredFiles);
@@ -104,7 +103,7 @@ export default function LogViewer() {
         setPinned(new Set(saved.pinnedIds));
         setMaxLines(saved.maxLines || 50000);
 
-        // pendingOlderRef contiene tutte le righe ripristinate
+        // Conserva tutte le righe per caricare "older" se si scrolla in alto
         pendingOlderRef.current = restoredLines.slice();
 
         toast.message(`Log ripristinati (${restoredLines.length.toLocaleString()} righe)`);
@@ -192,7 +191,7 @@ export default function LogViewer() {
       pendingOlderRef.current = [...linesForFile];
       newParsedFiles.push({
         fileName,
-        lines: linesForFile.slice(-Math.min(linesForFile.length, maxLines)),
+        lines: linesForFile, // mostra tutte le righe del file importato (nessun slice)
         totalLines,
       });
 
@@ -209,7 +208,15 @@ export default function LogViewer() {
     setIngesting(false);
     toast.success(`${arr.length} file caricati (stream)`);
 
-    queueMicrotask(() => persistAll());
+    // scroll automatico in fondo dopo import
+    queueMicrotask(() => {
+      const scrollers = document.querySelectorAll('[data-radix-scroll-area-viewport], .overflow-auto');
+      const el = (scrollers[scrollers.length - 1] as HTMLElement) || null;
+      if (el) {
+        el.scrollTop = el.scrollHeight - el.clientHeight;
+      }
+      persistAll();
+    });
   };
 
   const handleFilesSelected = async (list: FileList) => {
