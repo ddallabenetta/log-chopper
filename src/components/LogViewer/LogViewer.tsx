@@ -276,21 +276,23 @@ export default function LogViewer() {
         <CardTitle>Log Viewer</CardTitle>
       </CardHeader>
       <CardContent className="flex-1 min-h-0 flex flex-col gap-4 overflow-hidden px-4 sm:px-6">
-        <LogControls
-          filter={filter}
-          onFilterChange={setFilter}
-          pinnedCount={pinned.size}
-          visibleCount={visibleCount}
-          totalCount={totalCount}
-          showOnlyPinned={showOnlyPinned}
-          onToggleShowOnlyPinned={() => setShowOnlyPinned((v) => !v)}
-          onFilesSelected={handleFilesSelected}
-          onClearAll={clearAll}
-          pinnedIds={pinnedIds}
-          onJumpToId={(id) => setPendingJumpId(id)}
-        />
+        <div className="shrink-0">
+          <LogControls
+            filter={filter}
+            onFilterChange={setFilter}
+            pinnedCount={pinned.size}
+            visibleCount={visibleCount}
+            totalCount={totalCount}
+            showOnlyPinned={showOnlyPinned}
+            onToggleShowOnlyPinned={() => setShowOnlyPinned((v) => !v)}
+            onFilesSelected={handleFilesSelected}
+            onClearAll={clearAll}
+            pinnedIds={pinnedIds}
+            onJumpToId={(id) => setPendingJumpId(id)}
+          />
+        </div>
 
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
           <label className="flex items-center gap-2">
             Max righe
             <Input
@@ -312,7 +314,7 @@ export default function LogViewer() {
         </div>
 
         <div
-          className="flex-1 h-full min-h-0 rounded-md border relative overflow-x-hidden"
+          className="flex-1 min-h-0 rounded-md border relative overflow-hidden"
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
           onDrop={onDrop}
@@ -324,16 +326,18 @@ export default function LogViewer() {
               </div>
             </div>
           )}
-          <LogList
-            lines={allLines}
-            pinned={pinned}
-            onTogglePin={togglePin}
-            filter={filter}
-            showOnlyPinned={showOnlyPinned}
-            onLoadMoreTop={handleLoadMoreTop}
-            jumpToId={pendingJumpId}
-            onAfterJump={() => setPendingJumpId(null)}
-          />
+          <div className="absolute inset-0">
+            <LogList
+              lines={allLines}
+              pinned={pinned}
+              onTogglePin={togglePin}
+              filter={filter}
+              showOnlyPinned={showOnlyPinned}
+              onLoadMoreTop={handleLoadMoreTop}
+              jumpToId={pendingJumpId}
+              onAfterJump={() => setPendingJumpId(null)}
+            />
+          </div>
         </div>
       </CardContent>
     </Card>
