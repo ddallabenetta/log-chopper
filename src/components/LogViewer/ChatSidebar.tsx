@@ -61,7 +61,6 @@ const PROVIDER_MODELS: Record<Provider, { label: string; models: { id: string; l
 function pickContext(lines: LogLine[], pinnedIds: string[], maxPinned = 150, maxOthers = 250) {
   const pinnedSet = new Set(pinnedIds);
   const pinned = lines.filter(l => pinnedSet.has(l.id)).slice(-maxPinned);
-  // campionamento semplice: prendiamo le ultime non pinned che passano il filtro visuale già applicato a monte
   const others = lines.filter(l => !pinnedSet.has(l.id)).slice(-maxOthers);
   const serialize = (arr: LogLine[]) =>
     arr.map(l => `[${l.level}] ${l.fileName}:${l.lineNumber} ${l.content}`).join("\n");
@@ -85,7 +84,6 @@ async function callLLM(params: {
   const getKeyFallback = () => {
     if (apiKey && apiKey.trim()) return apiKey.trim();
     if (typeof window !== "undefined") {
-      // Best-effort: tentiamo da env esposti; se non presenti, l'utente deve inserirla nel campo.
       const k =
         (window as any).ENV_OPENAI_API_KEY ||
         (window as any).ENV_DEEPSEEK_API_KEY ||
@@ -95,7 +93,6 @@ async function callLLM(params: {
     return undefined;
   };
 
-  // Costruiamo payload OpenAI-compatible
   const body = {
     model,
     messages,
@@ -166,7 +163,15 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
   const abortRef = React.useRef<AbortController | null>(null);
 
   React.useEffect(() => {
-    setModel(PROVIDER_MODELS[provider].models[0].id);
+    // Quando cambio provider:
+    // - se openrouter: mantieni model attuale (non forzare da lista), così l'utente può scrivere libero.
+    // - altrimenti: seleziona il primo modello disponibile del provider.
+    setModel((prev) => {
+      if (provider === "openrouter") return prev || PROVIDER_MODELS.openrouter.models[0].id;
+      const first = PROVIDER_MODELS[provider].models[0]?.id;
+      return first ?? prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider]);
 
   const send = async (question?: string) => {
@@ -240,15 +245,24 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
             </select>
 
             <label className="text-xs text-muted-foreground">Modello</label>
-            <select
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-            >
-              {PROVIDER_MODELS[provider].models.map(m => (
-                <option key={m.id} value={m.id}>{m.label}</option>
-              ))}
-            </select>
+            {provider === "openrouter" ? (
+              <Input
+                className="h-8"
+                placeholder="es. anthropic/claude-3.7, openrouter/auto, meta-llama/..."
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              />
+            ) : (
+              <select
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              >
+                {PROVIDER_MODELS[provider].models.map(m => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+              </select>
+            )}
           </div>
 
           <div className="space-y-1">
