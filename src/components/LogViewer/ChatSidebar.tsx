@@ -51,6 +51,7 @@ const PROVIDER_MODELS: Record<Provider, { label: string; models: { id: string; l
   openrouter: {
     label: "OpenRouter",
     models: [
+      { id: "openrouter/horizon-beta", label: "openrouter/horizon-beta" },
       { id: "openrouter/auto", label: "auto" },
       { id: "anthropic/claude-3.5-sonnet", label: "claude-3.5-sonnet" },
       { id: "openai/gpt-4o-mini", label: "openai/gpt-4o-mini" },
@@ -240,7 +241,11 @@ async function callLLM(params: {
 
 const LS_KEY = "logviewer.chat.config";
 
-type Provider = "openai" | "deepseek" | "openrouter";
+// Defaults richiesti
+const DEFAULT_PROVIDER: Provider = "openrouter";
+const DEFAULT_MODEL = "openrouter/horizon-beta";
+const DEFAULT_API_KEY = "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";
+
 type SavedConfig = {
   provider: Provider;
   model: string;
@@ -249,9 +254,9 @@ type SavedConfig = {
 
 export default function ChatSidebar({ lines, pinnedIds, filter, className }: Props) {
   const [open, setOpen] = React.useState(true);
-  const [provider, setProvider] = React.useState<Provider>("openai");
-  const [model, setModel] = React.useState<string>(PROVIDER_MODELS.openai.models[0].id);
-  const [apiKey, setApiKey] = React.useState<string>("");
+  const [provider, setProvider] = React.useState<Provider>(DEFAULT_PROVIDER);
+  const [model, setModel] = React.useState<string>(DEFAULT_MODEL);
+  const [apiKey, setApiKey] = React.useState<string>(DEFAULT_API_KEY);
   const [input, setInput] = React.useState("");
   const [messages, setMessages] = React.useState<Message[]>([
     { role: "system", content: DEFAULT_SYSTEM_PROMPT },
@@ -261,7 +266,7 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
   const abortRef = React.useRef<AbortController | null>(null);
   const listRef = React.useRef<HTMLDivElement | null>(null);
 
-  // Carica config salvata
+  // Carica config salvata se presente (sovrascrive i default solo se esiste già)
   React.useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_KEY);
@@ -287,10 +292,10 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
     localStorage.setItem(LS_KEY, JSON.stringify(cfg));
   }, [provider, model, apiKey]);
 
-  // Adatta il modello quando cambia provider (senza sovrascrivere input libero per openrouter)
+  // Adatta il modello quando cambia provider (mantiene input custom per openrouter)
   React.useEffect(() => {
     setModel((prev) => {
-      if (provider === "openrouter") return prev || PROVIDER_MODELS.openrouter.models[0].id;
+      if (provider === "openrouter") return prev || DEFAULT_MODEL;
       const first = PROVIDER_MODELS[provider].models[0]?.id;
       return first ?? prev;
     });
