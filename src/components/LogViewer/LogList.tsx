@@ -97,7 +97,6 @@ export default function LogList({
   const overscan = 20;
 
   const [viewport, setViewport] = React.useState({ height: 0, scrollTop: 0 });
-
   const setViewportSafe = React.useCallback((next: { height: number; scrollTop: number }) => {
     setViewport((prev) => {
       if (prev.height === next.height && prev.scrollTop === next.scrollTop) return prev;
@@ -129,7 +128,6 @@ export default function LogList({
 
     el.addEventListener("scroll", onScroll);
     const ro = new ResizeObserver(() => {
-      // Aggiorna solo se l’altezza cambia realmente
       const h = el.clientHeight;
       if (h !== viewport.height) scheduleSetViewport(el);
     });
@@ -154,20 +152,34 @@ export default function LogList({
     return () => ro.disconnect();
   }, [scheduleSetViewport, viewport.height]);
 
+  // Calcolo offset costante tra scrollHeight e altezza totale calcolata (padding/bordi)
+  const total = filtered.length;
+  const totalHeight = total * rowHeight;
+  const containerPaddingOffset = React.useMemo(() => {
+    const el = containerRef.current;
+    if (!el) return 0;
+    const diff = el.scrollHeight - totalHeight;
+    return Number.isFinite(diff) ? diff : 0;
+  }, [totalHeight]);
+
+  // Scroll iniziale in fondo: usa scrollHeight - clientHeight, nel prossimo frame
   const didInitScrollBottomRef = React.useRef(false);
   React.useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    if (!didInitScrollBottomRef.current && filtered.length > 0) {
-      const nextTop = el.scrollHeight;
-      if (el.scrollTop !== nextTop) {
-        el.scrollTop = nextTop;
-        scheduleSetViewport(el);
-      }
-      didInitScrollBottomRef.current = true;
+    if (!didInitScrollBottomRef.current && total > 0) {
+      requestAnimationFrame(() => {
+        const target = Math.max(0, el.scrollHeight - el.clientHeight);
+        if (el.scrollTop !== target) {
+          el.scrollTop = target;
+          scheduleSetViewport(el);
+        }
+        didInitScrollBottomRef.current = true;
+      });
     }
-  }, [filtered.length, scheduleSetViewport]);
+  }, [total, scheduleSetViewport]);
 
+  // Jump to id compensando l’offset
   React.useEffect(() => {
     if (!jumpToId) return;
     const el = containerRef.current;
@@ -175,17 +187,16 @@ export default function LogList({
 
     const idx = filtered.findIndex((l) => l.id === jumpToId);
     if (idx >= 0) {
-      const targetTop = idx * rowHeight - viewport.height / 2;
+      const targetTop = idx * rowHeight - viewport.height / 2 + containerPaddingOffset;
       const nextTop = Math.max(0, targetTop);
-      if (el.scrollTop !== nextTop) {
+      if (Math.abs(el.scrollTop - nextTop) > 1) {
         el.scrollTop = nextTop;
         scheduleSetViewport(el);
       }
     }
     onAfterJump && onAfterJump();
-  }, [jumpToId, filtered, onAfterJump, viewport.height, scheduleSetViewport]);
+  }, [jumpToId, filtered, onAfterJump, viewport.height, containerPaddingOffset, scheduleSetViewport]);
 
-  const total = filtered.length;
   const startIndex = Math.max(0, Math.floor(viewport.scrollTop / rowHeight) - overscan);
   const endIndex = Math.min(
     total,
@@ -194,7 +205,6 @@ export default function LogList({
   const items = filtered.slice(startIndex, endIndex);
 
   const offsetY = startIndex * rowHeight;
-  const totalHeight = total * rowHeight;
 
   return (
     <div ref={outerRef} className="rounded border bg-card h-full min-h-0">
