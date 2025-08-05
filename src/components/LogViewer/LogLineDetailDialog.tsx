@@ -21,12 +21,13 @@ type JsonExtraction =
   | { kind: "embedded"; prefix: string; formatted: string; suffix: string };
 
 /**
- * Trova il primo JSON bilanciato in una stringa.
- * Gestisce sia oggetti {} che array [].
+ * Estrae il primo blocco JSON valido ({} o []) presente nella stringa.
+ * Gestisce stringhe con escape e virgolette per evitare di contare parentesi dentro stringhe.
  */
 function extractFirstJsonBlock(raw: string): JsonExtraction {
   const s = raw.trim();
-  // Caso: l'intera stringa è JSON
+
+  // 1) Se l'intera stringa è JSON valido
   try {
     const parsed = JSON.parse(s);
     return { kind: "full", formatted: JSON.stringify(parsed, null, 2) };
@@ -34,60 +35,63 @@ function extractFirstJsonBlock(raw: string): JsonExtraction {
     // continua
   }
 
-  // Prova a trovare un blocco JSON incastonato: cerca primo { o [
+  // 2) Cerca primo '{' o '[' nel testo grezzo
   const openIdxObj = raw.indexOf("{");
   const openIdxArr = raw.indexOf("[");
-  const openIdx = [openIdxObj, openIdxArr].filter((i) => i >= 0).sort((a, b) => a - b)[0];
-
-  if (openIdx === undefined) {
+  const candidates = [openIdxObj, openIdxArr].filter((i) => i >= 0).sort((a, b) => a - b);
+  if (candidates.length === 0) {
     return { kind: "none", raw };
   }
 
-  const opener = raw[openIdx];
-  const closer = opener === "{" ? "}" : "]";
-  let depth = 0;
-  let i = openIdx;
-  let inString = false;
-  let escaped = false;
+  // 3) Prova a partire da ciascun candidato (es. se il primo fallisce, tenta il successivo)
+  for (const openIdx of candidates) {
+    const opener = raw[openIdx];
+    const closer = opener === "{" ? "}" : "]";
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
 
-  for (; i < raw.length; i++) {
-    const ch = raw[i];
+    for (let i = openIdx; i < raw.length; i++) {
+      const ch = raw[i];
 
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (ch === "\\") {
-        escaped = true;
-      } else if (ch === "\"") {
-        inString = false;
-      }
-      continue;
-    } else {
-      if (ch === "\"") {
-        inString = true;
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (ch === "\\") {
+          escaped = true;
+        } else if (ch === "\"") {
+          inString = false;
+        }
         continue;
-      }
-      if (ch === opener) depth++;
-      else if (ch === closer) depth--;
-      if (depth === 0) {
-        // Candidato blocco JSON = raw.slice(openIdx, i+1)
-        const jsonSlice = raw.slice(openIdx, i + 1);
-        try {
-          const parsed = JSON.parse(jsonSlice);
-          return {
-            kind: "embedded",
-            prefix: raw.slice(0, openIdx).trimEnd(),
-            formatted: JSON.stringify(parsed, null, 2),
-            suffix: raw.slice(i + 1).trimStart(),
-          };
-        } catch {
-          // continua a cercare un altro blocco
-          break;
+      } else {
+        if (ch === "\"") {
+          inString = true;
+          continue;
+        }
+        if (ch === opener) depth++;
+        else if (ch === closer) depth--;
+
+        if (depth === 0) {
+          // Candidato blocco
+          const jsonSlice = raw.slice(openIdx, i + 1);
+          try {
+            const parsed = JSON.parse(jsonSlice);
+            return {
+              kind: "embedded",
+              prefix: raw.slice(0, openIdx).trimEnd(),
+              formatted: JSON.stringify(parsed, null, 2),
+              suffix: raw.slice(i + 1).trimStart(),
+            };
+          } catch {
+            // JSON non valido: interrompe e si passa al prossimo candidato
+            break;
+          }
         }
       }
     }
   }
 
+  // 4) Nessun blocco JSON valido trovato
   return { kind: "none", raw };
 }
 
