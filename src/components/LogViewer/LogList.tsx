@@ -93,31 +93,8 @@ export default function LogList({
     return map;
   }, [filtered, matcher, showOnlyPinned, filter.query]);
 
-  // Misura dinamicamente l'altezza riga, di default 22 per fallback
-  const [rowHeight, setRowHeight] = React.useState<number>(22);
-  const measureRef = React.useRef<HTMLDivElement | null>(null);
-
-  // Render di misura: mostra fino a 3 righe per avere una media stabile
-  const measureItems = React.useMemo(() => filtered.slice(0, Math.min(3, filtered.length)), [filtered]);
-
-  React.useEffect(() => {
-    const el = measureRef.current;
-    if (!el) return;
-    // Usa rAF per assicurarsi che il layout sia pronto
-    const id = requestAnimationFrame(() => {
-      const children = Array.from(el.children) as HTMLElement[];
-      if (children.length > 0) {
-        const heights = children.map((c) => c.offsetHeight);
-        const avg = heights.reduce((a, b) => a + b, 0) / heights.length;
-        const next = Math.max(1, Math.round(avg)); // evita zero o frazioni
-        if (Math.abs(next - rowHeight) >= 1) {
-          setRowHeight(next);
-        }
-      }
-    });
-    return () => cancelAnimationFrame(id);
-  }, [measureItems.length, filter.query, filter.mode, filter.caseSensitive]);
-
+  // Versione semplice: altezza riga fissa per virtualizzazione leggera
+  const rowHeight = 22;
   const overscan = 20;
 
   const [viewport, setViewport] = React.useState({ height: 0, scrollTop: 0 });
@@ -147,6 +124,7 @@ export default function LogList({
       if (onLoadMoreTop && el.scrollTop < 50) onLoadMoreTop();
     };
 
+    // init
     scheduleSetViewport(el);
 
     el.addEventListener("scroll", onScroll);
@@ -185,7 +163,7 @@ export default function LogList({
     return Number.isFinite(diff) ? diff : 0;
   }, [totalHeight]);
 
-  // Scroll iniziale in fondo: usa scrollHeight - clientHeight, nel prossimo frame
+  // Scroll iniziale in fondo
   const didInitScrollBottomRef = React.useRef(false);
   React.useEffect(() => {
     const el = containerRef.current;
@@ -200,9 +178,9 @@ export default function LogList({
         didInitScrollBottomRef.current = true;
       });
     }
-  }, [total, scheduleSetViewport, rowHeight]);
+  }, [total, scheduleSetViewport]);
 
-  // Jump to id compensando l’offset e usando l'altezza reale
+  // Jump ai pinned compensando offset
   React.useEffect(() => {
     if (!jumpToId) return;
     const el = containerRef.current;
@@ -218,7 +196,7 @@ export default function LogList({
       }
     }
     onAfterJump && onAfterJump();
-  }, [jumpToId, filtered, onAfterJump, viewport.height, containerPaddingOffset, scheduleSetViewport, rowHeight]);
+  }, [jumpToId, filtered, onAfterJump, viewport.height, containerPaddingOffset, scheduleSetViewport]);
 
   const startIndex = Math.max(0, Math.floor(viewport.scrollTop / rowHeight) - overscan);
   const endIndex = Math.min(
@@ -231,23 +209,6 @@ export default function LogList({
 
   return (
     <div ref={outerRef} className="rounded border bg-card h-full min-h-0">
-      {/* area invisibile per misurare l'altezza reale di una riga */}
-      <div
-        ref={measureRef}
-        style={{ position: "absolute", visibility: "hidden", pointerEvents: "none", height: 0, overflow: "hidden" }}
-      >
-        {measureItems.map((line) => (
-          <div key={`measure-${line.id}`}>
-            <LogLineItem
-              line={line}
-              isPinned={pinned.has(line.id)}
-              onTogglePin={() => {}}
-              highlightRanges={highlightMap.get(line.id) ?? []}
-            />
-          </div>
-        ))}
-      </div>
-
       <div ref={containerRef} className="h-full min-h-0 overflow-auto relative">
         {filtered.length === 0 ? (
           <div className="p-6 text-sm text-muted-foreground">Nessun risultato.</div>
