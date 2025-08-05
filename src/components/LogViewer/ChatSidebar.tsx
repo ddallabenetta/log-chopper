@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Send, Bot, PanelRightClose, PanelRightOpen, Settings2, Loader2, Scissors } from "lucide-react";
+import { Send, Bot, PanelRightClose, PanelRightOpen, Settings2, Loader2, Scissors, Server } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import MessageContent from "./MessageContent";
 import type { LogLine, FilterConfig } from "./LogTypes";
 
-type Provider = "openai" | "deepseek" | "openrouter";
+type Provider = "openai" | "deepseek" | "openrouter" | "ollama";
 
 type Message = {
   role: "system" | "user" | "assistant";
@@ -34,7 +34,7 @@ Guidelines:
 - If ambiguity exists, list hypotheses and what evidence would confirm/deny them.
 Output in Italian. Use bullet points and be concise.`;
 
-const PROVIDER_MODELS: Record<Provider, { label: string; models: { id: string; label: string }[] }> = {
+const PROVIDER_MODELS: Record<Exclude<Provider, "ollama">, { label: string; models: { id: string; label: string }[] }> = {
   openai: {
     label: "OpenAI",
     models: [
@@ -264,6 +264,46 @@ async function streamOpenRouter(params: {
   }
 }
 
+// Ollama streaming: /api/chat con stream true
+async function streamOllama(params: {
+  endpoint: string; // es. http://localhost:11434
+  model: string;
+  messages: Message[];
+  signal?: AbortSignal;
+  onToken: (t: string) => void;
+}) {
+  const res = await fetch(`${params.endpoint.replace(/\/$/, "")}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: params.model,
+      messages: params.messages.map(m => ({ role: m.role, content: m.content })),
+      stream: true,
+    }),
+    signal: params.signal,
+  });
+  if (!res.ok) throw new Error(`Ollama error: ${res.status} ${await res.text()}`);
+  const reader = res.body?.getReader();
+  if (!reader) return;
+  const decoder = new TextDecoder();
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value, { stream: true });
+    // Ollama invia JSON ND-stream: una riga per token
+    const lines = chunk.split("\n").filter(Boolean);
+    for (const line of lines) {
+      try {
+        const data = JSON.parse(line);
+        const t = data?.message?.content || "";
+        if (t) params.onToken(t);
+      } catch {
+        // ignora frammenti incompleti
+      }
+    }
+  }
+}
+
 async function callLLM(params: {
   provider: Provider;
   model: string;
@@ -271,8 +311,9 @@ async function callLLM(params: {
   messages: Message[];
   abortSignal?: AbortSignal;
   onToken?: (t: string) => void;
+  ollamaEndpoint?: string;
 }): Promise<string> {
-  const { provider, model, apiKey, messages, abortSignal, onToken } = params;
+  const { provider, model, apiKey, messages, abortSignal, onToken, ollamaEndpoint } = params;
 
   const getKeyFallback = () => {
     if (apiKey && apiKey.trim()) return apiKey.trim();
@@ -317,7 +358,7 @@ async function callLLM(params: {
     if (!key) throw new Error("DEEPSEEK_API_KEY mancante. Inserisci la chiave nel pannello.");
     const res = await fetch("https://api.deepseek.com/chat/completions", {
       method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${key}", "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: abortSignal,
     });
@@ -326,6 +367,35 @@ async function callLLM(params: {
     return data.choices?.[0]?.message?.content ?? "";
   }
 
+  if (provider === "ollama") {
+    const endpoint = (ollamaEndpoint || "http://localhost:11434").trim();
+    if (onToken) {
+      await streamOllama({
+        endpoint,
+        model,
+        messages,
+        signal: abortSignal,
+        onToken,
+      });
+      return "";
+    }
+    const res = await fetch(`${endpoint.replace(/\/$/, "")}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        messages: messages.map(m => ({ role: m.role, content: m.content })),
+        stream: false,
+      }),
+      signal: abortSignal,
+    });
+    if (!res.ok) throw new Error(`Ollama error: ${res.status} ${await res.text()}`);
+    const data = await res.json();
+    const content: string = data?.message?.content ?? "";
+    return content;
+  }
+
+  // openrouter
   const key = apiKey || getKeyFallback() || (process.env.OPENROUTER_API_KEY as string | undefined);
   if (!key) throw new Error("OPENROUTER_API_KEY mancante. Inserisci la chiave nel pannello.");
   if (onToken) {
@@ -343,19 +413,20 @@ async function callLLM(params: {
   return data.choices?.[0]?.message?.content ?? "";
 }
 
-// Nuova chiave versionata
-const LS_KEY = "logviewer.chat.config.v3"; // bumped to v3 after compression settings
+// Nuova chiave versionata (bumped per Ollama)
+const LS_KEY = "logviewer.chat.config.v4";
 
-// Defaults
 const DEFAULT_PROVIDER: Provider = "openrouter";
 const DEFAULT_MODEL = "openrouter/horizon-beta";
-const DEFAULT_API_KEY = "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";
+const DEFAULT_API_KEY = "";
 
+// Config persistita
 type SavedConfig = {
   provider: Provider;
   model: string;
   apiKey: string;
   compression: CompressionConfig;
+  ollamaEndpoint?: string;
 };
 
 export default function ChatSidebar({ lines, pinnedIds, filter, className }: Props) {
@@ -363,6 +434,7 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
   const [provider, setProvider] = React.useState<Provider>(DEFAULT_PROVIDER);
   const [model, setModel] = React.useState<string>(DEFAULT_MODEL);
   const [apiKey, setApiKey] = React.useState<string>(DEFAULT_API_KEY);
+  const [ollamaEndpoint, setOllamaEndpoint] = React.useState<string>("http://localhost:11434");
   const [input, setInput] = React.useState("");
   const [messages, setMessages] = React.useState<Message[]>([
     { role: "system", content: DEFAULT_SYSTEM_PROMPT },
@@ -381,7 +453,7 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
       const raw = localStorage.getItem(LS_KEY);
       if (!raw) return;
       const parsed = JSON.parse(raw) as Partial<SavedConfig>;
-      if (parsed.provider && ["openai", "deepseek", "openrouter"].includes(parsed.provider)) {
+      if (parsed.provider && ["openai", "deepseek", "openrouter", "ollama"].includes(parsed.provider)) {
         setProvider(parsed.provider as Provider);
       }
       if (typeof parsed.model === "string" && parsed.model.trim()) {
@@ -389,6 +461,9 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
       }
       if (typeof parsed.apiKey === "string") {
         setApiKey(parsed.apiKey);
+      }
+      if (parsed.ollamaEndpoint) {
+        setOllamaEndpoint(parsed.ollamaEndpoint);
       }
       if (parsed.compression) {
         setCompression({
@@ -404,24 +479,25 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
   }, []);
 
   React.useEffect(() => {
-    const cfg: SavedConfig = { provider, model, apiKey, compression };
+    const cfg: SavedConfig = { provider, model, apiKey, compression, ollamaEndpoint };
     localStorage.setItem(LS_KEY, JSON.stringify(cfg));
-  }, [provider, model, apiKey, compression]);
-
-  React.useEffect(() => {
-    setModel((prev) => {
-      if (provider === "openrouter") return prev || DEFAULT_MODEL;
-      const first = PROVIDER_MODELS[provider].models[0]?.id;
-      return first ?? prev;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provider]);
+  }, [provider, model, apiKey, compression, ollamaEndpoint]);
 
   React.useEffect(() => {
     const el = listRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight - el.clientHeight;
   }, [messages, streamBuffer, loading]);
+
+  React.useEffect(() => {
+    setModel((prev) => {
+      if (provider === "openrouter") return prev || DEFAULT_MODEL;
+      if (provider === "ollama") return prev || "llama3"; // default locale
+      const first = PROVIDER_MODELS[provider].models[0]?.id;
+      return first ?? prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider]);
 
   const buildContextText = React.useCallback(() => {
     if (!enableCompression) {
@@ -479,6 +555,7 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
         messages: nextMessages,
         abortSignal: controller.signal,
         onToken: (t) => setStreamBuffer((prev) => prev + t),
+        ollamaEndpoint,
       });
       if (streamBuffer.length === 0) {
         const full = await callLLM({
@@ -487,6 +564,7 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
           apiKey,
           messages: nextMessages,
           abortSignal: controller.signal,
+          ollamaEndpoint,
         });
         setMessages((prev) => [...prev, { role: "assistant", content: full }]);
       } else {
@@ -528,9 +606,10 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
                   value={provider}
                   onChange={(e) => setProvider(e.target.value as Provider)}
                 >
-                  {Object.entries(PROVIDER_MODELS).map(([key, val]) => (
-                    <option key={key} value={key}>{val.label}</option>
-                  ))}
+                  <option value="openai">OpenAI</option>
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="ollama">Ollama (locale)</option>
                 </select>
 
                 <label className="text-xs text-muted-foreground">Modello</label>
@@ -538,6 +617,13 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
                   <Input
                     className="h-8"
                     placeholder="es. anthropic/claude-3.7, openrouter/auto, meta-llama/..."
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                  />
+                ) : provider === "ollama" ? (
+                  <Input
+                    className="h-8"
+                    placeholder="es. llama3, qwen2.5, mistral, codellama..."
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
                   />
@@ -552,24 +638,41 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
                     ))}
                   </select>
                 )}
+
+                {provider === "ollama" && (
+                  <>
+                    <label className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Server className="h-3.5 w-3.5" />
+                      Endpoint
+                    </label>
+                    <Input
+                      className="h-8"
+                      placeholder="http://localhost:11434"
+                      value={ollamaEndpoint}
+                      onChange={(e) => setOllamaEndpoint(e.target.value)}
+                    />
+                  </>
+                )}
               </div>
 
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">API Key</span>
-                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                    <Settings2 className="h-3 w-3" />
-                    <span>Usa env o inserisci qui</span>
+              {provider !== "ollama" && (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">API Key</span>
+                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                      <Settings2 className="h-3 w-3" />
+                      <span>Usa env o inserisci qui</span>
+                    </div>
                   </div>
+                  <Input
+                    type="password"
+                    placeholder="Incolla la tua API key (opzionale)"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    className="h-8"
+                  />
                 </div>
-                <Input
-                  type="password"
-                  placeholder="Incolla la tua API key (opzionale)"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  className="h-8"
-                />
-              </div>
+              )}
 
               <div className="grid grid-cols-2 gap-2 pt-2">
                 <div className="flex items-center gap-2">
