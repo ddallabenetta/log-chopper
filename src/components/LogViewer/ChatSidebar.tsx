@@ -239,7 +239,8 @@ async function callLLM(params: {
   return data.choices?.[0]?.message?.content ?? "";
 }
 
-const LS_KEY = "logviewer.chat.config";
+// Nuova chiave versionata per evitare i vecchi valori
+const LS_KEY = "logviewer.chat.config.v2";
 
 // Defaults richiesti
 const DEFAULT_PROVIDER: Provider = "openrouter";
