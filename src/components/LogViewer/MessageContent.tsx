@@ -88,10 +88,14 @@ export default function MessageContent({ text, className }: Props) {
         start: number;
         match: RegExpMatchArray | null;
       };
+      const makeCandidate = <T extends Candidate["type"]>(type: T, start: number, match: RegExpMatchArray | null) => {
+        return { type, start, match } as { type: T; start: number; match: RegExpMatchArray | null };
+      };
+
       const candidates: Candidate[] = [
-        { type: "code", start: codeMatch ? codeMatch.index ?? -1 : -1, match: codeMatch },
-        { type: "bold", start: boldMatch ? boldMatch.index ?? -1 : -1, match: boldMatch },
-        { type: "link", start: linkMatch ? linkMatch.index ?? -1 : -1, match: linkMatch },
+        makeCandidate("code", codeMatch ? codeMatch.index ?? -1 : -1, codeMatch),
+        makeCandidate("bold", boldMatch ? boldMatch.index ?? -1 : -1, boldMatch),
+        makeCandidate("link", linkMatch ? linkMatch.index ?? -1 : -1, linkMatch),
       ].filter((c) => c.start >= 0);
 
       if (candidates.length === 0) {
