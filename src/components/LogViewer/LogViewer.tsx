@@ -1,4 +1,3 @@
-ingestStats nel pannello info">
 "use client";
 
 import * as React from "react";
