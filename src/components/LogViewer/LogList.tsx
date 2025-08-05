@@ -63,7 +63,6 @@ export default function LogList({
   jumpToId,
   onAfterJump,
 }: Props) {
-  const outerRef = React.useRef<HTMLDivElement | null>(null);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
 
   const matcher = React.useMemo(() => buildMatcher(filter), [filter]);
@@ -93,149 +92,69 @@ export default function LogList({
     return map;
   }, [filtered, matcher, showOnlyPinned, filter.query]);
 
-  // Versione semplice: altezza riga fissa per virtualizzazione leggera
-  const rowHeight = 22;
-  const overscan = 20;
-
-  const [viewport, setViewport] = React.useState({ height: 0, scrollTop: 0 });
-  const setViewportSafe = React.useCallback((next: { height: number; scrollTop: number }) => {
-    setViewport((prev) => {
-      if (prev.height === next.height && prev.scrollTop === next.scrollTop) return prev;
-      return next;
-    });
-  }, []);
-
-  const rafIdRef = React.useRef<number | null>(null);
-  const scheduleSetViewport = React.useCallback((el: HTMLElement) => {
-    if (rafIdRef.current != null) cancelAnimationFrame(rafIdRef.current);
-    rafIdRef.current = requestAnimationFrame(() => {
-      rafIdRef.current = null;
-      const next = { height: el.clientHeight, scrollTop: el.scrollTop };
-      setViewportSafe(next);
-    });
-  }, [setViewportSafe]);
-
-  React.useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    const onScroll = () => {
-      scheduleSetViewport(el);
-      if (onLoadMoreTop && el.scrollTop < 50) onLoadMoreTop();
-    };
-
-    // init
-    scheduleSetViewport(el);
-
-    el.addEventListener("scroll", onScroll);
-    const ro = new ResizeObserver(() => {
-      const h = el.clientHeight;
-      if (h !== viewport.height) scheduleSetViewport(el);
-    });
-    ro.observe(el);
-
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      ro.disconnect();
-      if (rafIdRef.current != null) cancelAnimationFrame(rafIdRef.current);
-    };
-  }, [onLoadMoreTop, scheduleSetViewport, viewport.height]);
-
-  React.useEffect(() => {
-    const outer = outerRef.current;
-    const el = containerRef.current;
-    if (!outer || !el) return;
-    const ro = new ResizeObserver(() => {
-      const h = el.clientHeight;
-      if (h !== viewport.height) scheduleSetViewport(el);
-    });
-    ro.observe(outer);
-    return () => ro.disconnect();
-  }, [scheduleSetViewport, viewport.height]);
-
-  // Calcolo offset costante tra scrollHeight e altezza totale calcolata (padding/bordi)
-  const total = filtered.length;
-  const totalHeight = total * rowHeight;
-  const containerPaddingOffset = React.useMemo(() => {
-    const el = containerRef.current;
-    if (!el) return 0;
-    const diff = el.scrollHeight - totalHeight;
-    return Number.isFinite(diff) ? diff : 0;
-  }, [totalHeight]);
-
-  // Scroll iniziale in fondo
+  // Scroll iniziale in fondo quando ci sono elementi
   const didInitScrollBottomRef = React.useRef(false);
   React.useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    if (!didInitScrollBottomRef.current && total > 0) {
+    if (!didInitScrollBottomRef.current && filtered.length > 0) {
       requestAnimationFrame(() => {
-        const target = Math.max(0, el.scrollHeight - el.clientHeight);
-        if (Math.abs(el.scrollTop - target) > 1) {
-          el.scrollTop = target;
-          scheduleSetViewport(el);
-        }
+        el.scrollTop = el.scrollHeight - el.clientHeight;
         didInitScrollBottomRef.current = true;
       });
     }
-  }, [total, scheduleSetViewport]);
+  }, [filtered.length]);
 
-  // Jump ai pinned compensando offset
+  // Caricamento top-on-scroll (se fornito)
+  React.useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !onLoadMoreTop) return;
+    const onScroll = () => {
+      if (el.scrollTop < 50) onLoadMoreTop();
+    };
+    el.addEventListener("scroll", onScroll);
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [onLoadMoreTop]);
+
+  // Jump a id
   React.useEffect(() => {
     if (!jumpToId) return;
     const el = containerRef.current;
     if (!el) return;
-
-    const idx = filtered.findIndex((l) => l.id === jumpToId);
-    if (idx >= 0) {
-      const targetTop = idx * rowHeight - viewport.height / 2 + containerPaddingOffset;
-      const nextTop = Math.max(0, targetTop);
-      if (Math.abs(el.scrollTop - nextTop) > 1) {
-        el.scrollTop = nextTop;
-        scheduleSetViewport(el);
-      }
+    const target = el.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(jumpToId)}"]`);
+    if (target) {
+      const top = target.offsetTop - el.clientHeight / 2;
+      el.scrollTo({ top: Math.max(0, top) });
     }
     onAfterJump && onAfterJump();
-  }, [jumpToId, filtered, onAfterJump, viewport.height, containerPaddingOffset, scheduleSetViewport]);
-
-  const startIndex = Math.max(0, Math.floor(viewport.scrollTop / rowHeight) - overscan);
-  const endIndex = Math.min(
-    total,
-    Math.ceil((viewport.scrollTop + viewport.height) / rowHeight) + overscan
-  );
-  const items = filtered.slice(startIndex, endIndex);
-
-  const offsetY = startIndex * rowHeight;
+  }, [jumpToId, onAfterJump]);
 
   return (
-    <div ref={outerRef} className="rounded border bg-card h-full min-h-0">
-      <div ref={containerRef} className="h-full min-h-0 overflow-auto relative">
+    <div className="rounded border bg-card h-full min-h-0">
+      <div ref={containerRef} className="h-full min-h-0 overflow-auto">
         {filtered.length === 0 ? (
           <div className="p-6 text-sm text-muted-foreground">Nessun risultato.</div>
         ) : (
-          <div style={{ height: totalHeight + "px", position: "relative" }}>
-            <div style={{ position: "absolute", top: offsetY + "px", left: 0, right: 0 }}>
-              {items.map((line, i) => {
-                const absoluteIndex = startIndex + i;
-                const isEven = absoluteIndex % 2 === 0;
-                // Key unica e stabile anche in presenza di duplicati
-                const renderKey = `${line.id}__${absoluteIndex}`;
-                return (
-                  <div
-                    key={renderKey}
-                    className={isEven ? "bg-muted/30" : "bg-transparent"}
-                    data-row-id={line.id}
-                  >
-                    <LogLineItem
-                      line={line}
-                      isPinned={pinned.has(line.id)}
-                      onTogglePin={onTogglePin}
-                      highlightRanges={highlightMap.get(line.id) ?? []}
-                    />
-                  </div>
-                );
-              })}
-            </div>
+          <div>
+            {filtered.map((line, idx) => {
+              const isEven = idx % 2 === 0;
+              // Key unica anche con duplicati: id + idx
+              const renderKey = `${line.id}__${idx}`;
+              return (
+                <div
+                  key={renderKey}
+                  className={isEven ? "bg-muted/30" : "bg-transparent"}
+                  data-row-id={line.id}
+                >
+                  <LogLineItem
+                    line={line}
+                    isPinned={pinned.has(line.id)}
+                    onTogglePin={onTogglePin}
+                    highlightRanges={highlightMap.get(line.id) ?? []}
+                  />
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
