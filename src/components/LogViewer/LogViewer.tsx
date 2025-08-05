@@ -66,10 +66,7 @@ export default function LogViewer() {
   const [ingesting, setIngesting] = React.useState(false);
   const [ingestStats, setIngestStats] = React.useState<FileIngestStats[]>([]);
 
-  // Gestione jump-to-id
   const [pendingJumpId, setPendingJumpId] = React.useState<string | null>(null);
-
-  // Lazy buffer per caricamento verso l'alto
   const pendingOlderRef = React.useRef<LogLine[]>([]);
 
   const addFiles = async (list: FileList | File[]) => {
@@ -106,7 +103,6 @@ export default function LogViewer() {
           newLinesAll.splice(0, removeCount);
         }
 
-        // Pubblica a piccoli batch per non bloccare
         if (batch.length >= 2000) {
           const publish = batch.splice(0, batch.length);
           setAllLines((prev) => {
@@ -120,9 +116,7 @@ export default function LogViewer() {
         }
       }
 
-      // Pubblica eventuale batch residuo
       if (pendingOlderRef.current.length === 0) {
-        // Prima importazione: mostriamo la coda (recenti) subito
         setAllLines((prev) => {
           const merged = [...prev, ...batch, ...[]];
           if (merged.length > maxLines) {
@@ -131,7 +125,6 @@ export default function LogViewer() {
           return merged;
         });
       } else {
-        // Se ci sono già righe, accodiamo il batch residuo
         setAllLines((prev) => {
           const merged = [...prev, ...batch];
           if (merged.length > maxLines) {
@@ -141,8 +134,7 @@ export default function LogViewer() {
         });
       }
 
-      // Mettiamo le righe più vecchie nel buffer per lazy load verso l'alto
-      pendingOlderRef.current.unshift(...linesForFile); // più vecchie in testa
+      pendingOlderRef.current.unshift(...linesForFile);
       newParsedFiles.push({
         fileName,
         lines: linesForFile.slice(-Math.min(linesForFile.length, maxLines)),
@@ -156,7 +148,6 @@ export default function LogViewer() {
       });
     }
 
-    // Manteniamo solo le più recenti visibili, quelle iniziali restano nel buffer older
     if (pendingOlderRef.current.length > maxLines) {
       pendingOlderRef.current = pendingOlderRef.current.slice(
         Math.max(0, pendingOlderRef.current.length - maxLines - allLines.length)
@@ -229,7 +220,6 @@ export default function LogViewer() {
     }
   }, [allLines, filter, pinned, showOnlyPinned]);
 
-  // Lazy load verso l'alto quando richiesto da LogList
   const handleLoadMoreTop = () => {
     if (pendingOlderRef.current.length === 0) return;
     const take = 2000;
@@ -239,11 +229,10 @@ export default function LogViewer() {
     );
     if (slice.length === 0) return;
 
-    // Inseriamo all'inizio mantenendo le più recenti in coda
     setAllLines((prev) => {
       const merged = [...slice, ...prev];
       if (merged.length > maxLines) {
-        merged.splice(0, merged.length - maxLines); // taglia le più vecchie
+        merged.splice(0, merged.length - maxLines);
       }
       return merged;
     });
@@ -286,7 +275,7 @@ export default function LogViewer() {
       <CardHeader className="pb-4 px-4 sm:px-6">
         <CardTitle>Log Viewer</CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col gap-4 overflow-hidden px-4 sm:px-6">
+      <CardContent className="flex-1 min-h-0 flex flex-col gap-4 overflow-hidden px-4 sm:px-6">
         <LogControls
           filter={filter}
           onFilterChange={setFilter}
@@ -317,15 +306,13 @@ export default function LogViewer() {
           {ingesting && <span>Import in corso…</span>}
           {ingestStats.length > 0 && (
             <span>
-              File importati: {ingestStats.length} • Scartate (globali per step): potrebbero essere applicati limiti di memoria
+              File importati: {iggestStats.length} • Scartate (globali per step): potrebbero essere applicati limiti di memoria
             </span>
           )}
         </div>
 
         <div
-          className={`flex-1 min-h-0 rounded-md border relative overflow-x-hidden ${
-            isDragging ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""
-          }`}
+          className={`flex-1 min-h-0 rounded-md border relative overflow-x-hidden`}
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
           onDrop={onDrop}

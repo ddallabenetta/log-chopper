@@ -24,11 +24,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="it">
+    <html lang="it" className="h-full">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased h-full min-h-0 flex flex-col`}
       >
-        {children}
+        <div className="flex-1 min-h-0 flex flex-col">
+          {children}
+        </div>
         <SonnerToaster />
       </body>
     </html>
