@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import * as d3 from "d3";
-import { sugiyama, decrossTwoLayer, coordCenter, hierarchy } from "d3-dag";
 
 type Props = {
   data: unknown;
@@ -12,7 +11,6 @@ type Props = {
 
 type FlatNode = { id: string; parentId?: string; label: string };
 
-// Appiattisce un JSON in nodi con id parentId
 function flattenJsonToNodes(value: unknown, rootId = "root", maxNodes = 500): FlatNode[] {
   const out: FlatNode[] = [];
   let count = 0;
@@ -62,11 +60,10 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
     const svg = d3.select(ref.current);
     svg.selectAll("*").remove();
 
-    // Flatten
     const flat = flattenJsonToNodes(data, "root", maxNodes);
     if (flat.length === 0) return;
 
-    // d3.stratify per creare una gerarchia, poi hierarchy() di d3-dag per ottenere un DAG
+    // Costruisce gerarchia
     const stratifier = d3
       .stratify<{ id: string; parentId?: string }>()
       .id((d) => d.id)
@@ -81,35 +78,32 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
       return;
     }
 
-    // Converte in DAG
-    const dag = hierarchy()(root);
+    // Layout ad albero
+    // width per colonna, height per riga
+    const nodeW = 180;
+    const nodeH = 70;
+    const treeLayout = d3.tree<unknown>().nodeSize([nodeH, nodeW]);
 
-    // Layout sugiyama
-    const layout = sugiyama()
-      .decross(decrossTwoLayer())
-      .coord(coordCenter())
-      .nodeSize(() => [24, 110]); // [height, width]
+    const treeRoot = treeLayout(root as unknown as d3.HierarchyPointNode<unknown>);
 
-    layout(dag);
-
-    // compute bounds
+    // Compute bounds
     let minX = Infinity,
       maxX = -Infinity,
       minY = Infinity,
       maxY = -Infinity;
-    for (const n of dag.nodes()) {
-      const x = (n as any).x as number;
-      const y = (n as any).y as number;
+    treeRoot.each((n: any) => {
+      const x = n.x as number;
+      const y = n.y as number;
       if (x < minX) minX = x;
       if (x > maxX) maxX = x;
       if (y < minY) minY = y;
       if (y > maxY) maxY = y;
-    }
+    });
     const width = Math.max(600, maxY - minY + 200);
     const height = Math.max(400, maxX - minX + 200);
     svg.attr("viewBox", `0 0 ${width} ${height}`);
 
-    const g = svg.append("g");
+    const g = svg.append("g").attr("transform", `translate(${100 - minY}, ${100 - minX})`);
 
     // Pan/zoom
     svg.call(
@@ -121,23 +115,20 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
         }) as any
     );
 
-    // Edges curve
-    const line = d3.line<{ x: number; y: number }>().curve(d3.curveCatmullRom);
+    // Link curve
+    const linkGen = d3
+      .linkHorizontal<any, any>()
+      .x((d) => d.y)
+      .y((d) => d.x);
 
-    // Edges
+    const links = treeRoot.links();
+
     g.append("g")
       .selectAll("path")
-      .data(dag.links())
+      .data(links)
       .enter()
       .append("path")
-      .attr("d", (l: any) => {
-        const points = [
-          { x: l.source.x, y: l.source.y + 50 },
-          { x: (l.source.x + l.target.x) / 2, y: (l.source.y + l.target.y) / 2 },
-          { x: l.target.x, y: l.target.y - 50 },
-        ];
-        return line(points as any) || "";
-      })
+      .attr("d", linkGen as any)
       .attr("fill", "none")
       .attr("stroke", "hsl(var(--muted-foreground))")
       .attr("stroke-width", 1.2)
@@ -147,14 +138,11 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
     const nodes = g
       .append("g")
       .selectAll("g.node")
-      .data(dag.nodes())
+      .data(treeRoot.descendants())
       .enter()
       .append("g")
       .attr("class", "node")
       .attr("transform", (n: any) => `translate(${n.y},${n.x})`);
-
-    // label lookup
-    const labelMap = new Map(flat.map((n) => [n.id, n.label]));
 
     nodes
       .append("rect")
@@ -167,13 +155,15 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
       .attr("fill", "hsl(var(--card))")
       .attr("stroke", "hsl(var(--border))");
 
+    const labelMap = new Map(flat.map((n) => [n.id, n.label]));
+
     nodes
       .append("text")
       .attr("text-anchor", "middle")
       .attr("dominant-baseline", "middle")
       .attr("font-size", 10)
       .attr("fill", "hsl(var(--foreground))")
-      .text((n: any) => labelMap.get(n.data.data.id) ?? n.data.data.id);
+      .text((n: any) => labelMap.get(n.data.id) ?? n.data.id);
   }, [data, maxNodes]);
 
   return (
