@@ -105,10 +105,6 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
 
   const hasJson = extraction.kind !== "none";
 
-  // Contenitore scrollabile e vincolato alla larghezza del modale
-  const codeContainerClass =
-    "w-full max-w-full rounded-md bg-muted p-3 text-xs font-mono whitespace-pre overflow-x-auto overflow-y-auto";
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl">
@@ -156,13 +152,13 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
               <>
                 {extraction.kind === "none" && (
                   <textarea
-                    className="w-full max-w-full max-h-[60vh] h-[50vh] rounded-md border bg-background p-3 text-sm font-mono overflow-auto"
+                    className="w-full max-h-[60vh] h-[50vh] rounded-md border bg-background p-3 text-sm font-mono overflow-auto"
                     readOnly
                     value={extraction.raw}
                   />
                 )}
                 {extraction.kind === "full" && (
-                  <pre className={codeContainerClass}>
+                  <pre className="w-full max-h-[60vh] overflow-y-auto overflow-x-auto rounded-md bg-muted p-3 text-xs font-mono whitespace-pre">
                     {extraction.formatted}
                   </pre>
                 )}
@@ -170,17 +166,17 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
                   <div className="space-y-2">
                     {extraction.prefix && (
                       <textarea
-                        className="w-full max-w-full rounded-md border bg-background p-2 text-xs font-mono overflow-auto"
+                        className="w-full rounded-md border bg-background p-2 text-xs font-mono overflow-auto"
                         readOnly
                         value={extraction.prefix}
                       />
                     )}
-                    <pre className="max-h-[50vh] h-[50vh] {codeContainerClass}">
+                    <pre className="w-full max-h-[50vh] overflow-y-auto overflow-x-auto rounded-md bg-muted p-3 text-xs font-mono whitespace-pre">
                       {extraction.formatted}
                     </pre>
                     {extraction.suffix && (
                       <textarea
-                        className="w-full max-w-full rounded-md border bg-background p-2 text-xs font-mono overflow-auto"
+                        className="w-full rounded-md border bg-background p-2 text-xs font-mono overflow-auto"
                         readOnly
                         value={extraction.suffix}
                       />
