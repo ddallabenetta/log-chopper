@@ -240,6 +240,7 @@ async function callLLM(params: {
 
 const LS_KEY = "logviewer.chat.config";
 
+type Provider = "openai" | "deepseek" | "openrouter";
 type SavedConfig = {
   provider: Provider;
   model: string;
@@ -364,12 +365,11 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
     setLoading(false);
   };
 
-  // Larghezza aumentata e card wrapper
   return (
     <div className={cn("h-full flex flex-col border-l bg-transparent", className)} style={{ width: open ? 460 : 56 }}>
       <div className="p-2 h-full">
-        <Card className="h-full flex flex-col">
-          <div className="flex items-center justify-between px-2 py-2 border-b">
+        <Card className="h-full flex flex-col overflow-hidden">
+          <div className="flex items-center justify-between px-2 py-2 border-b shrink-0">
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4" />
               {open && <span className="text-sm font-medium">Chat Log Assistant</span>}
@@ -380,7 +380,7 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
           </div>
 
           {open && (
-            <div className="p-2 space-y-2 border-b">
+            <div className="p-2 space-y-2 border-b shrink-0">
               <div className="grid grid-cols-2 gap-2">
                 <label className="text-xs text-muted-foreground">Provider</label>
                 <select
@@ -461,7 +461,7 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
           )}
 
           {open && (
-            <div className="p-2 border-t">
+            <div className="p-2 border-t shrink-0">
               <div className="flex gap-2">
                 <Input
                   placeholder="Scrivi la tua domanda…"

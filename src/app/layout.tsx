@@ -32,7 +32,7 @@ export default function RootLayout({
       >
         <ThemeProvider>
           <header className="w-full border-b bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-            <div className="mx-auto max-w-screen-2xl px-4 py-3 flex items-center justify-between">
+            <div className="w-full px-4 py-3 flex items-center justify-between">
               <h1 className="text-base sm:text-lg md:text-xl font-semibold flex items-center gap-2">
                 <span role="img" aria-label="tronco">🪵</span>
                 Log Chopper

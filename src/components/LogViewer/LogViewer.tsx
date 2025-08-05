@@ -272,7 +272,7 @@ export default function LogViewer() {
   const pinnedIds = React.useMemo(() => Array.from(pinned), [pinned]);
 
   return (
-    <Card className="w-screen h-screen max-w-none rounded-none border-0 flex flex-col overflow-hidden">
+    <Card className="w-screen h-[calc(100vh-56px)] max-w-none rounded-none border-0 flex flex-col overflow-hidden">
       <CardContent className="flex-1 min-h-0 flex flex-col overflow-hidden p-0">
         <div className="shrink-0 p-3">
           <LogControls
@@ -316,27 +316,28 @@ export default function LogViewer() {
           onDrop={onDrop}
         >
           {isDragging && (
-            <div className="pointer-events-none sticky inset-0 z-10 grid place-items-center bg-background/70">
+            <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-background/70">
               <div className="rounded-lg border bg-card px-6 py-3 text-sm">
                 Rilascia i file .log qui
               </div>
             </div>
           )}
 
-          <div className="flex-1 min-w-0 overflow-auto">
-            <LogList
-              lines={allLines}
-              pinned={pinned}
-              onTogglePin={togglePin}
-              filter={filter}
-              showOnlyPinned={showOnlyPinned}
-              onLoadMoreTop={handleLoadMoreTop}
-              jumpToId={pendingJumpId}
-              onAfterJump={() => setPendingJumpId(null)}
-            />
+          <div className="flex-1 min-w-0 overflow-hidden flex">
+            <div className="flex-1 min-w-0 overflow-auto">
+              <LogList
+                lines={allLines}
+                pinned={pinned}
+                onTogglePin={togglePin}
+                filter={filter}
+                showOnlyPinned={showOnlyPinned}
+                onLoadMoreTop={handleLoadMoreTop}
+                jumpToId={pendingJumpId}
+                onAfterJump={() => setPendingJumpId(null)}
+              />
+            </div>
+            <ChatSidebar lines={allLines} pinnedIds={pinnedIds} filter={filter} />
           </div>
-
-          <ChatSidebar lines={allLines} pinnedIds={pinnedIds} filter={filter} />
         </div>
       </CardContent>
     </Card>
