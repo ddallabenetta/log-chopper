@@ -72,7 +72,7 @@ export default function LogViewer() {
   const [pendingJumpId, setPendingJumpId] = React.useState<string | null>(null);
   const pendingOlderRef = React.useRef<LogLine[]>([]);
 
-  // Caricamento stato persistito
+  // Caricamento stato persistito: NON troncare le righe, ripristina tutte
   React.useEffect(() => {
     (async () => {
       setIsRestoring(true);
@@ -86,17 +86,28 @@ export default function LogViewer() {
           level: (l.level as LogLevel) || "OTHER",
         }));
         setAllLines(restoredLines);
-        setFiles(
-          saved.files.map((f) => ({
-            fileName: f.fileName,
-            lines: restoredLines.filter((l) => l.fileName === f.fileName),
-            totalLines: f.totalLines,
-          }))
-        );
+
+        // Ricostruisci files con conteggio totale e lista coerente (senza taglio)
+        const byFile = new Map<string, LogLine[]>();
+        for (const l of restoredLines) {
+          const arr = byFile.get(l.fileName);
+          if (arr) arr.push(l);
+          else byFile.set(l.fileName, [l]);
+        }
+        const restoredFiles: ParsedFile[] = Array.from(byFile.entries()).map(([fileName, lines]) => ({
+          fileName,
+          lines, // mostra tutte quelle salvate per quel file
+          totalLines: lines.length,
+        }));
+        setFiles(restoredFiles);
+
         setPinned(new Set(saved.pinnedIds));
         setMaxLines(saved.maxLines || 50000);
+
+        // pendingOlderRef contiene tutte le righe ripristinate
         pendingOlderRef.current = restoredLines.slice();
-        toast.message("Log ripristinati dalla memoria locale");
+
+        toast.message(`Log ripristinati (${restoredLines.length.toLocaleString()} righe)`);
       }
       setIsRestoring(false);
     })();
@@ -121,6 +132,7 @@ export default function LogViewer() {
   }, [allLines, pinned, files, maxLines]);
 
   const addFiles = async (list: FileList | File[]) => {
+    // Ogni nuovo caricamento sostituisce i precedenti
     clearAll(false);
 
     const arr = Array.from(list);
