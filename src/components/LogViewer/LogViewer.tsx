@@ -312,7 +312,7 @@ export default function LogViewer() {
         </div>
 
         <div
-          className="flex-1 min-h-0 rounded-md border relative overflow-x-hidden"
+          className="flex-1 h-full min-h-0 rounded-md border relative overflow-x-hidden"
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
           onDrop={onDrop}

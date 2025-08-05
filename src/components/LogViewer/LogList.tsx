@@ -10,9 +10,9 @@ type Props = {
   onTogglePin: (id: string) => void;
   filter: FilterConfig;
   showOnlyPinned: boolean;
-  onLoadMoreTop?: () => void; // lazy load verso l'alto
-  jumpToId?: string | null; // richiesta di jump esterna
-  onAfterJump?: () => void; // reset richiesta jump
+  onLoadMoreTop?: () => void;
+  jumpToId?: string | null;
+  onAfterJump?: () => void;
 };
 
 function buildMatcher(filter: FilterConfig): ((text: string) => { match: boolean; ranges: { start: number; end: number }[] }) {
@@ -63,10 +63,10 @@ export default function LogList({
   jumpToId,
   onAfterJump,
 }: Props) {
+  const outerRef = React.useRef<HTMLDivElement | null>(null);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
 
   const matcher = React.useMemo(() => buildMatcher(filter), [filter]);
-
   const passesLevel = React.useCallback(
     (lvl: LogLine["level"]) => (filter.level === "ALL" ? true : lvl === filter.level),
     [filter.level]
@@ -92,25 +92,19 @@ export default function LogList({
     return map;
   }, [filtered, matcher, showOnlyPinned, filter.query]);
 
-  // Altezza riga stimata per virtualizzazione
-  const rowHeight = 22; // px, semplice stima
-  const overscan = 20; // righe extra sopra/sotto
+  const rowHeight = 22;
+  const overscan = 20;
 
   const [viewport, setViewport] = React.useState({ height: 0, scrollTop: 0 });
   const [didInitScrollBottom, setDidInitScrollBottom] = React.useState(false);
 
-  // Setup scroll e observer
   React.useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
     const onScroll = () => {
       setViewport({ height: el.clientHeight, scrollTop: el.scrollTop });
-
-      // Lazy load verso l'alto
-      if (onLoadMoreTop && el.scrollTop < 50) {
-        onLoadMoreTop();
-      }
+      if (onLoadMoreTop && el.scrollTop < 50) onLoadMoreTop();
     };
 
     setViewport({ height: el.clientHeight, scrollTop: el.scrollTop });
@@ -125,7 +119,18 @@ export default function LogList({
     };
   }, [onLoadMoreTop]);
 
-  // Scroll iniziale in basso per mostrare le righe più recenti
+  // Quando cambia l’altezza esterna (p.es. dopo aver caricato righe), ricalcola il viewport.
+  React.useEffect(() => {
+    const outer = outerRef.current;
+    const el = containerRef.current;
+    if (!outer || !el) return;
+    const ro = new ResizeObserver(() => {
+      setViewport({ height: el.clientHeight, scrollTop: el.scrollTop });
+    });
+    ro.observe(outer);
+    return () => ro.disconnect();
+  }, []);
+
   React.useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -136,7 +141,6 @@ export default function LogList({
     }
   }, [filtered.length, didInitScrollBottom]);
 
-  // Jump a una riga specifica
   React.useEffect(() => {
     if (!jumpToId) return;
     const el = containerRef.current;
@@ -151,7 +155,6 @@ export default function LogList({
     onAfterJump && onAfterJump();
   }, [jumpToId, filtered, onAfterJump, viewport.height]);
 
-  // Virtualizzazione base
   const total = filtered.length;
   const startIndex = Math.max(0, Math.floor(viewport.scrollTop / rowHeight) - overscan);
   const endIndex = Math.min(
@@ -164,8 +167,8 @@ export default function LogList({
   const totalHeight = total * rowHeight;
 
   return (
-    <div className="rounded border bg-card h-full">
-      <div ref={containerRef} className="h-full overflow-auto relative">
+    <div ref={outerRef} className="rounded border bg-card h-full min-h-0">
+      <div ref={containerRef} className="h-full min-h-0 overflow-auto relative">
         {filtered.length === 0 ? (
           <div className="p-6 text-sm text-muted-foreground">Nessun risultato.</div>
         ) : (
