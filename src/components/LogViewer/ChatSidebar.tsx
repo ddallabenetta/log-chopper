@@ -364,130 +364,135 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className }: Pro
     setLoading(false);
   };
 
+  // Larghezza aumentata e card wrapper
   return (
-    <div className={cn("h-full flex flex-col border-l bg-card", className)} style={{ width: open ? 380 : 48 }}>
-      <div className="flex items-center justify-between px-2 py-2 border-b">
-        <div className="flex items-center gap-2">
-          <Bot className="h-4 w-4" />
-          {open && <span className="text-sm font-medium">Chat Log Assistant</span>}
-        </div>
-        <Button size="icon" variant="ghost" onClick={() => setOpen(o => !o)} title={open ? "Chiudi" : "Apri"}>
-          {open ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
-        </Button>
-      </div>
-
-      {open && (
-        <div className="p-2 space-y-2 border-b">
-          <div className="grid grid-cols-2 gap-2">
-            <label className="text-xs text-muted-foreground">Provider</label>
-            <select
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-              value={provider}
-              onChange={(e) => setProvider(e.target.value as Provider)}
-            >
-              {Object.entries(PROVIDER_MODELS).map(([key, val]) => (
-                <option key={key} value={key}>{val.label}</option>
-              ))}
-            </select>
-
-            <label className="text-xs text-muted-foreground">Modello</label>
-            {provider === "openrouter" ? (
-              <Input
-                className="h-8"
-                placeholder="es. anthropic/claude-3.7, openrouter/auto, meta-llama/..."
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-              />
-            ) : (
-              <select
-                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-              >
-                {PROVIDER_MODELS[provider].models.map(m => (
-                  <option key={m.id} value={m.id}>{m.label}</option>
-                ))}
-              </select>
-            )}
+    <div className={cn("h-full flex flex-col border-l bg-transparent", className)} style={{ width: open ? 460 : 56 }}>
+      <div className="p-2 h-full">
+        <Card className="h-full flex flex-col">
+          <div className="flex items-center justify-between px-2 py-2 border-b">
+            <div className="flex items-center gap-2">
+              <Bot className="h-4 w-4" />
+              {open && <span className="text-sm font-medium">Chat Log Assistant</span>}
+            </div>
+            <Button size="icon" variant="ghost" onClick={() => setOpen(o => !o)} title={open ? "Chiudi" : "Apri"}>
+              {open ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+            </Button>
           </div>
 
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">API Key</span>
-              <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                <Settings2 className="h-3 w-3" />
-                <span>Usa env o inserisci qui</span>
+          {open && (
+            <div className="p-2 space-y-2 border-b">
+              <div className="grid grid-cols-2 gap-2">
+                <label className="text-xs text-muted-foreground">Provider</label>
+                <select
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                  value={provider}
+                  onChange={(e) => setProvider(e.target.value as Provider)}
+                >
+                  {Object.entries(PROVIDER_MODELS).map(([key, val]) => (
+                    <option key={key} value={key}>{val.label}</option>
+                  ))}
+                </select>
+
+                <label className="text-xs text-muted-foreground">Modello</label>
+                {provider === "openrouter" ? (
+                  <Input
+                    className="h-8"
+                    placeholder="es. anthropic/claude-3.7, openrouter/auto, meta-llama/..."
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                  />
+                ) : (
+                  <select
+                    className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                  >
+                    {PROVIDER_MODELS[provider].models.map(m => (
+                      <option key={m.id} value={m.id}>{m.label}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">API Key</span>
+                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                    <Settings2 className="h-3 w-3" />
+                    <span>Usa env o inserisci qui</span>
+                  </div>
+                </div>
+                <Input
+                  type="password"
+                  placeholder="Incolla la tua API key (opzionale)"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  className="h-8"
+                />
+              </div>
+
+              <div className="text-[10px] text-muted-foreground">
+                Le righe pinned hanno priorità nel contesto (non vengono mostrate qui).
               </div>
             </div>
-            <Input
-              type="password"
-              placeholder="Incolla la tua API key (opzionale)"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              className="h-8"
-            />
-          </div>
-
-          <div className="text-[10px] text-muted-foreground">
-            Le righe pinned hanno priorità nel contesto (non vengono mostrate qui).
-          </div>
-        </div>
-      )}
-
-      {open && (
-        <div ref={listRef} className="flex-1 min-h-0 overflow-auto p-2 space-y-2">
-          {messages
-            .filter(m => m.role !== "system")
-            .map((m, idx) => (
-              <Card key={idx} className={cn("p-2 text-sm", m.role === "assistant" ? "bg-muted/50" : "bg-transparent")}>
-                <div className="whitespace-pre-wrap break-words">{m.content}</div>
-              </Card>
-            ))}
-          {loading && streamBuffer && (
-            <Card className="p-2 text-sm bg-muted/50">
-              <div className="whitespace-pre-wrap break-words">{streamBuffer}</div>
-            </Card>
           )}
-          {loading && !streamBuffer && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Generazione in corso…
+
+          {open && (
+            <div ref={listRef} className="flex-1 min-h-0 overflow-auto p-2 space-y-2">
+              {messages
+                .filter(m => m.role !== "system")
+                .map((m, idx) => (
+                  <Card key={idx} className={cn("p-2 text-sm", m.role === "assistant" ? "bg-muted/50" : "bg-transparent")}>
+                    <div className="whitespace-pre-wrap break-words">{m.content}</div>
+                  </Card>
+                ))}
+              {loading && streamBuffer && (
+                <Card className="p-2 text-sm bg-muted/50">
+                  <div className="whitespace-pre-wrap break-words">{streamBuffer}</div>
+                </Card>
+              )}
+              {loading && !streamBuffer && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Generazione in corso…
+                </div>
+              )}
             </div>
           )}
-        </div>
-      )}
 
-      {open && (
-        <div className="p-2 border-t">
-          <div className="flex gap-2">
-            <Input
-              placeholder="Scrivi la tua domanda…"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  if (!loading) send();
-                }
-              }}
-            />
-            <Button onClick={() => send()} disabled={loading || !input.trim()}>
-              <Send className="h-4 w-4" />
-            </Button>
-            {loading && (
-              <Button variant="outline" onClick={stop}>
-                Stop
-              </Button>
-            )}
-          </div>
-          <div className="mt-2 flex items-center gap-2">
-            <Switch id="inc-prompt" checked disabled />
-            <label htmlFor="inc-prompt" className="text-xs text-muted-foreground">
-              Prompt di sistema per analisi log sempre attivo
-            </label>
-          </div>
-        </div>
-      )}
+          {open && (
+            <div className="p-2 border-t">
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Scrivi la tua domanda…"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      if (!loading) send();
+                    }
+                  }}
+                />
+                <Button onClick={() => send()} disabled={loading || !input.trim()}>
+                  <Send className="h-4 w-4" />
+                </Button>
+                {loading && (
+                  <Button variant="outline" onClick={stop}>
+                    Stop
+                  </Button>
+                )}
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <Switch id="inc-prompt" checked disabled />
+                <label htmlFor="inc-prompt" className="text-xs text-muted-foreground">
+                  Prompt di sistema per analisi log sempre attivo
+                </label>
+              </div>
+            </div>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
