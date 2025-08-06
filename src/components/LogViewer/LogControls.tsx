@@ -22,6 +22,7 @@ type Props = {
   onFilesSelected: (files: FileList) => void;
   pinnedIds?: string[];
   onJumpToId?: (id: string) => void;
+  // nuovi props per max righe
   maxLines?: number;
   onChangeMaxLines?: (v: number) => void;
 };
@@ -183,24 +184,17 @@ export default function LogControls({
         </div>
       </div>
 
-      {/* Riga indicatori + azioni richieste allineate a sinistra */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-sm">
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
           <Badge variant="secondary">{t("totals")}: {totalCount}</Badge>
           <Badge>{t("visible")}: {visibleCount}</Badge>
           <Badge variant="outline">{t("pinned")}: {pinnedCount}</Badge>
+        </div>
 
-          <Button
-            variant="default"
-            size="sm"
-            className="h-8 gap-2 shadow hover:shadow-md transition-shadow"
-            onClick={goBottom}
-            title={t("go_bottom")}
-          >
-            <ArrowDownToLine className="h-4 w-4" />
-            <span className="hidden sm:inline">{t("go_bottom")}</span>
-          </Button>
+        <div className="flex-1" />
 
+        <div className="flex items-center gap-2">
+          {/* Max righe portato qui */}
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             {t("max_lines")}
             <Input
@@ -213,9 +207,18 @@ export default function LogControls({
               className="h-8 w-28"
             />
           </label>
-        </div>
 
-        <div className="flex-1" />
+          <Button
+            variant="default"
+            size="sm"
+            className="h-8 gap-2 shadow hover:shadow-md transition-shadow"
+            onClick={goBottom}
+            title={t("go_bottom")}
+          >
+            <ArrowDownToLine className="h-4 w-4" />
+            <span className="hidden sm:inline">{t("go_bottom")}</span>
+          </Button>
+        </div>
       </div>
 
       {uniquePinned.length > 0 && (
