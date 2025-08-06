@@ -7,6 +7,7 @@ import ChatHeader from "./components/ChatHeader";
 import ChatSettings, { type CompressionConfig } from "./components/ChatSettings";
 import ChatMessages from "./components/ChatMessages";
 import type { LogLine, FilterConfig } from "./LogTypes";
+import { PanelRightOpen } from "lucide-react";
 
 type Provider = "openai" | "deepseek" | "openrouter" | "ollama";
 type Message = { role: "system" | "user" | "assistant"; content: string };
@@ -44,7 +45,7 @@ const PROVIDER_MODELS: Record<Exclude<Provider, "ollama">, { label: string; mode
   },
 };
 
-export default function ChatSidebar({ lines, pinnedIds, className, open: openProp, onOpenChange }: Props) {
+export default function ChatSidebar({ lines, pinnedIds, className, open: openProp, onOpenChange, filter }: Props) {
   // Apertura sidebar
   const [openUncontrolled, setOpenUncontrolled] = React.useState(true);
   const open = openProp ?? openUncontrolled;
@@ -150,7 +151,6 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     };
   }, [lines, pinnedIds, compression]);
 
-  // LLM call
   async function callLLM(params: {
     provider: Provider;
     model: string;
@@ -216,7 +216,6 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     return data.choices?.[0]?.message?.content ?? "";
   }
 
-  // Persistenza configurazioni
   const LS_KEY = "logviewer.chat.config.v4";
   type SavedConfig = {
     provider: Provider;
@@ -228,7 +227,6 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
 
   const didLoadConfigRef = React.useRef(false);
 
-  // Load una sola volta al mount
   React.useEffect(() => {
     if (didLoadConfigRef.current) return;
     didLoadConfigRef.current = true;
@@ -251,18 +249,17 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
       }
       if (parsed.compression) {
         setCompression({
-          maxPinned: typeof parsed.compression.maxPinned === "number" ? parsed.compression.maxPinned : DEFAULT_COMPRESSION.maxPinned,
-          maxOthers: typeof parsed.compression.maxOthers === "number" ? parsed.compression.maxOthers : DEFAULT_COMPRESSION.maxOthers,
-          maxLineChars: typeof parsed.compression.maxLineChars === "number" ? parsed.compression.maxLineChars : DEFAULT_COMPRESSION.maxLineChars,
-          samplePerLevel: typeof parsed.compression.samplePerLevel === "number" ? parsed.compression.samplePerLevel : DEFAULT_COMPRESSION.samplePerLevel,
-          includeStacks: typeof parsed.compression.includeStacks === "boolean" ? parsed.compression.includeStacks : DEFAULT_COMPRESSION.includeStacks,
+          maxPinned: typeof parsed.compression.maxPinned === "number" ? parsed.compression.maxPinned : 120,
+          maxOthers: typeof parsed.compression.maxOthers === "number" ? parsed.compression.maxOthers : 180,
+          maxLineChars: typeof parsed.compression.maxLineChars === "number" ? parsed.compression.maxLineChars : 220,
+          samplePerLevel: typeof parsed.compression.samplePerLevel === "number" ? parsed.compression.samplePerLevel : 40,
+          includeStacks: typeof parsed.compression.includeStacks === "boolean" ? parsed.compression.includeStacks : true,
         });
         setEnableCompression(true);
       }
     } catch {}
   }, []);
 
-  // Save su ogni modifica
   const saveConfig = React.useCallback((cfg: SavedConfig) => {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify(cfg));
@@ -272,7 +269,6 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     saveConfig({ provider, model, apiKey, compression, ollamaEndpoint });
   }, [provider, model, apiKey, compression, ollamaEndpoint, saveConfig]);
 
-  // Auto-scroll sicuro: senza setState, con guard e raf
   const rafIdRef = React.useRef<number | null>(null);
   React.useEffect(() => {
     const el = listRef.current;
@@ -294,7 +290,6 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     };
   }, [messages.length, streamBuffer, loading]);
 
-  // Model di fallback su cambio provider
   React.useEffect(() => {
     setModel((prev) => {
       if (provider === "openrouter") return prev || "openrouter/horizon-beta";
@@ -305,7 +300,6 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider]);
 
-  // Invio domanda
   const send = async (question?: string) => {
     const q = (question ?? input).trim();
     if (!q) return;
@@ -366,7 +360,7 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
   };
 
   return (
-    <div className={cn("h-full flex flex-col border-l bg-transparent", className)} style={{ width: open ? 460 : 56 }}>
+    <div className={cn("h-full flex flex-col border-l bg-transparent relative", className)} style={{ width: open ? 460 : 56 }}>
       <div className="p-2 h-full">
         <Card className="h-full flex flex-col overflow-hidden">
           <ChatHeader
@@ -410,6 +404,16 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
           )}
         </Card>
       </div>
+
+      {!open && (
+        <button
+          onClick={() => setOpen(true)}
+          title="Apri chat"
+          className="fixed right-3 bottom-4 z-20 h-12 w-12 rounded-full bg-background border shadow-md flex items-center justify-center hover:shadow-lg transition-shadow"
+        >
+          <PanelRightOpen className="h-5 w-5" />
+        </button>
+      )}
     </div>
   );
 }
