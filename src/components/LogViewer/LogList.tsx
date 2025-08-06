@@ -42,14 +42,15 @@ function buildMatcher(filter: FilterConfig): ((text: string) => { match: boolean
     const ranges: { start: number; end: number }[] = [];
     const haystack = filter.caseSensitive ? text : text.toLowerCase();
     const needle = filter.caseSensitive ? filter.query : filter.query.toLowerCase();
+    if (needle.length === 0) return { match: true, ranges: [] };
     let from = 0;
     while (true) {
       const idx = haystack.indexOf(needle, from);
-      if (idx === -1 || needle.length === 0) break;
+      if (idx === -1) break;
       ranges.push({ start: idx, end: idx + needle.length });
       from = idx + needle.length;
     }
-    return { match: ranges.length > 0 || filter.query.length === 0, ranges };
+    return { match: ranges.length > 0, ranges };
   };
 }
 
@@ -91,6 +92,27 @@ export default function LogList({
     }
     return map;
   }, [filtered, matcher, showOnlyPinned, filter.query]);
+
+  // Virtualizzazione semplice: stimiamo un'altezza media riga e calcoliamo finestra visibile
+  const EST_ROW = 32; // altezza media per riga (px), può variare ma è un buon compromesso
+  const OVERSCAN = 12; // buffer sopra/sotto per scorrimenti fluidi
+
+  const [scrollTop, setScrollTop] = React.useState(0);
+  const [viewportH, setViewportH] = React.useState(0);
+
+  React.useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onScroll = () => setScrollTop(el.scrollTop);
+    const onResize = () => setViewportH(el.clientHeight);
+    onResize();
+    el.addEventListener("scroll", onScroll);
+    window.addEventListener("resize", onResize);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onResize);
+    };
+  }, []);
 
   // Scroll all'inizio: vai in fondo al primo popolamento
   const didInitScrollBottomRef = React.useRef(false);
@@ -150,7 +172,17 @@ export default function LogList({
     (window as any).__LOG_LIST_CONTAINER__ = containerRef.current;
   }, []);
 
-  const lastId = filtered.length > 0 ? filtered[filtered.length - 1]?.id : null;
+  // Calcolo finestra virtualizzata
+  const total = filtered.length;
+  const startIndex = Math.max(0, Math.floor(scrollTop / EST_ROW) - OVERSCAN);
+  const visibleCount = Math.max(0, Math.ceil((viewportH || 1) / EST_ROW) + OVERSCAN * 2);
+  const endIndex = Math.min(total, startIndex + visibleCount);
+
+  const topPad = startIndex * EST_ROW;
+  const bottomPad = Math.max(0, (total - endIndex) * EST_ROW);
+
+  const slice = filtered.slice(startIndex, endIndex);
+  const lastId = slice.length > 0 ? slice[slice.length - 1]?.id : null;
 
   return (
     <div className="rounded border bg-card h-full min-h-0 flex flex-col">
@@ -163,9 +195,11 @@ export default function LogList({
           <div className="p-6 text-sm text-muted-foreground">Nessun risultato.</div>
         ) : (
           <div>
-            {filtered.map((line, idx) => {
-              const isEven = idx % 2 === 0;
-              const renderKey = `${line.id}__${idx}`;
+            {topPad > 0 && <div style={{ height: topPad }} />}
+            {slice.map((line, idx) => {
+              const globalIdx = startIndex + idx;
+              const isEven = globalIdx % 2 === 0;
+              const renderKey = `${line.id}__${globalIdx}`;
               const isLast = lastId === line.id;
               return (
                 <div
@@ -173,6 +207,7 @@ export default function LogList({
                   className={isEven ? "bg-muted/30" : "bg-transparent"}
                   data-row-id={line.id}
                   id={isLast ? "log-last-row" : undefined}
+                  style={{ minHeight: EST_ROW }}
                 >
                   <LogLineItem
                     line={line}
@@ -183,6 +218,7 @@ export default function LogList({
                 </div>
               );
             })}
+            {bottomPad > 0 && <div style={{ height: bottomPad }} />}
           </div>
         )}
       </div>

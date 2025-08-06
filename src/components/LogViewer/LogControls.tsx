@@ -20,8 +20,8 @@ type Props = {
   onToggleShowOnlyPinned: () => void;
   onFilesSelected: (files: FileList) => void;
   onClearAll: () => void;
-  pinnedIds?: string[]; // nuovi: elenco righe pin
-  onJumpToId?: (id: string) => void; // navigazione alla riga
+  pinnedIds?: string[];
+  onJumpToId?: (id: string) => void;
 };
 
 const LEVEL_OPTIONS: Array<{ label: string; value: FilterConfig["level"] }> = [
@@ -33,6 +33,16 @@ const LEVEL_OPTIONS: Array<{ label: string; value: FilterConfig["level"] }> = [
   { label: "Error", value: "ERROR" },
   { label: "Altro", value: "OTHER" },
 ];
+
+// piccola hook debounce
+function useDebouncedValue<T>(value: T, delay = 200) {
+  const [debounced, setDebounced] = React.useState(value);
+  React.useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
+}
 
 export default function LogControls({
   filter,
@@ -48,6 +58,23 @@ export default function LogControls({
   onJumpToId,
 }: Props) {
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // stato locale per la query + debounce
+  const [localQuery, setLocalQuery] = React.useState(filter.query);
+  const debouncedQuery = useDebouncedValue(localQuery, 200);
+
+  // sincronizza verso l'alto quando cambia il debounced
+  React.useEffect(() => {
+    if (debouncedQuery !== filter.query) {
+      onFilterChange({ ...filter, query: debouncedQuery });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedQuery]);
+
+  // allinea in caso filter.query venga cambiata esternamente (clear, ecc.)
+  React.useEffect(() => {
+    setLocalQuery(filter.query);
+  }, [filter.query]);
 
   const handleFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -93,8 +120,8 @@ export default function LogControls({
                 ? "Filtra per regex (es: error|warn)"
                 : "Filtra per testo (es: error)"
             }
-            value={filter.query}
-            onChange={(e) => onFilterChange({ ...filter, query: e.target.value })}
+            value={localQuery}
+            onChange={(e) => setLocalQuery(e.target.value)}
           />
           <Tabs
             value={filter.mode}
