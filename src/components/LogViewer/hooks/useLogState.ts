@@ -256,7 +256,7 @@ export function useLogState() {
 
       const current = allLines.filter((l) => l.fileName === selectedTab);
       const first = current[0];
-      const block = Math.max(2000, Math.min(pageSize, 20000));
+      const block = Math.max(4000, Math.min(pageSize, 20000));
       const fromLine = first ? Math.max(1, first.lineNumber - block) : 1;
       const toLine = first ? first.lineNumber - 1 : 0;
       if (toLine < fromLine) return;
@@ -264,10 +264,22 @@ export function useLogState() {
       const older = await prov.range(fromLine, toLine);
       if (!older.length) return;
 
+      const el: HTMLElement | null = (window as any).__LOG_LIST_CONTAINER__;
+      const prevHeight = el ? el.scrollHeight : 0;
+
       setAllLines((prev) => {
         const others = prev.filter((l) => l.fileName !== selectedTab);
         const currentPrev = prev.filter((l) => l.fileName === selectedTab);
         return dedupeById([...others, ...older, ...currentPrev]);
+      });
+
+      // Mantieni l'ancora visiva evitando “salti”
+      requestAnimationFrame(() => {
+        const el2: HTMLElement | null = (window as any).__LOG_LIST_CONTAINER__;
+        if (!el2) return;
+        const newHeight = el2.scrollHeight;
+        const delta = newHeight - prevHeight;
+        if (delta > 0) el2.scrollTop += delta;
       });
     } finally {
       loadingUpRef.current = false;
@@ -288,7 +300,7 @@ export function useLogState() {
       const current = allLines.filter((l) => l.fileName === selectedTab);
       const last = current[current.length - 1];
       const fromLine = last ? last.lineNumber + 1 : Math.max(1, total - pageSize + 1);
-      const toLine = Math.min(total, fromLine + Math.max(2000, Math.min(pageSize, 20000)) - 1);
+      const toLine = Math.min(total, fromLine + Math.max(4000, Math.min(pageSize, 20000)) - 1);
       if (toLine < fromLine) return;
 
       const newer = await prov.range(fromLine, toLine);
@@ -327,6 +339,41 @@ export function useLogState() {
     setPendingJumpId(`${selectedTab}:${target}`);
   }
 
+  // Nuovi helper: vai all’inizio / vai alla fine assoluti del file
+  async function jumpToStart() {
+    if (selectedTab === ALL_TAB_ID) return;
+    const prov = providersRef.current.get(selectedTab);
+    if (!prov) return;
+    const total = await prov.totalLines();
+    if (total <= 0) return;
+    const from = 1;
+    const to = Math.min(total, pageSize);
+    const rows = await prov.range(from, to);
+    if (!rows.length) return;
+    setAllLines((prev) => {
+      const others = prev.filter((l) => l.fileName !== selectedTab);
+      return dedupeById([...others, ...rows]);
+    });
+    setPendingJumpId(`${selectedTab}:1`);
+  }
+
+  async function jumpToEnd() {
+    if (selectedTab === ALL_TAB_ID) return;
+    const prov = providersRef.current.get(selectedTab);
+    if (!prov) return;
+    const total = await prov.totalLines();
+    if (total <= 0) return;
+    const to = total;
+    const from = Math.max(1, to - pageSize + 1);
+    const rows = await prov.range(from, to);
+    if (!rows.length) return;
+    setAllLines((prev) => {
+      const others = prev.filter((l) => l.fileName !== selectedTab);
+      return dedupeById([...others, ...rows]);
+    });
+    setPendingJumpId(`${selectedTab}:${total}`);
+  }
+
   const onJumpToId = (id: string) => setPendingJumpId(id);
 
   // Ricarica tail alla selezione tab
@@ -353,23 +400,103 @@ export function useLogState() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTab, pageSize]);
 
-  // Prefetch proattivo quando è attivo un filtro di ricerca: estende la finestra verso l’alto e il basso
+  // Scansione progressiva deterministica durante ricerca/filtri attivi
+  const scanRunIdRef = React.useRef<number>(0);
   React.useEffect(() => {
     const hasActiveFilter =
       showOnlyPinned ||
       filter.level !== "ALL" ||
       (filter.query && filter.query.trim().length > 0);
 
-    if (!hasActiveFilter) return;
+    if (!hasActiveFilter || selectedTab === ALL_TAB_ID) {
+      scanRunIdRef.current++;
+      return;
+    }
 
-    const id = setInterval(() => {
-      // alterna up/down per espandere rapidamente la copertura
-      void loadMoreUp();
-      void loadMoreDown();
-    }, 500);
+    const prov = providersRef.current.get(selectedTab);
+    if (!prov) return;
+    let cancelled = false;
+    const runId = ++scanRunIdRef.current;
 
-    return () => clearInterval(id);
-  }, [filter.mode, filter.query, filter.caseSensitive, filter.level, showOnlyPinned, selectedTab]); // eslint-disable-line react-hooks/exhaustive-deps
+    (async () => {
+      const total = await prov.totalLines();
+      if (total <= 0) return;
+
+      // Punto di partenza: finestra corrente
+      const current = allLines.filter((l) => l.fileName === selectedTab);
+      let minLoaded = current.length ? current[0].lineNumber : Math.max(1, total - pageSize + 1);
+      let maxLoaded = current.length ? current[current.length - 1].lineNumber : total;
+
+      const BLOCK = Math.max(8000, Math.min(pageSize, 32000));
+
+      // espandi verso l’alto poi verso il basso alternando, finché copri tutto
+      let dirUp = true;
+      while (!cancelled && runId === scanRunIdRef.current && (minLoaded > 1 || maxLoaded < total)) {
+        if (dirUp && minLoaded > 1) {
+          const from = Math.max(1, minLoaded - BLOCK);
+          const to = minLoaded - 1;
+          if (to >= from) {
+            const chunk = await prov.range(from, to);
+            if (cancelled || runId !== scanRunIdRef.current) return;
+            if (chunk.length) {
+              const el: HTMLElement | null = (window as any).__LOG_LIST_CONTAINER__;
+              const prevHeight = el ? el.scrollHeight : 0;
+
+              setAllLines((prev) => {
+                const others = prev.filter((l) => l.fileName !== selectedTab);
+                const cur = prev.filter((l) => l.fileName === selectedTab);
+                return dedupeById([...others, ...chunk, ...cur]);
+              });
+
+              // Mantieni ancora visiva
+              requestAnimationFrame(() => {
+                const el2: HTMLElement | null = (window as any).__LOG_LIST_CONTAINER__;
+                if (!el2) return;
+                const newHeight = el2.scrollHeight;
+                const delta = newHeight - prevHeight;
+                if (delta > 0) el2.scrollTop += delta;
+              });
+
+              minLoaded = from;
+            } else {
+              minLoaded = Math.max(1, from);
+            }
+          } else {
+            minLoaded = 1;
+          }
+        } else if (!dirUp && maxLoaded < total) {
+          const from = maxLoaded + 1;
+          const to = Math.min(total, from + BLOCK - 1);
+          if (to >= from) {
+            const chunk = await prov.range(from, to);
+            if (cancelled || runId !== scanRunIdRef.current) return;
+            if (chunk.length) {
+              setAllLines((prev) => {
+                const others = prev.filter((l) => l.fileName !== selectedTab);
+                const cur = prev.filter((l) => l.fileName === selectedTab);
+                return dedupeById([...others, ...cur, ...chunk]);
+              });
+              maxLoaded = to;
+            } else {
+              maxLoaded = Math.min(total, to);
+            }
+          } else {
+            maxLoaded = total;
+          }
+        }
+
+        dirUp = !dirUp;
+        // cediamo al main thread
+        await new Promise((r) => setTimeout(r, 0));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      scanRunIdRef.current++;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter.mode, filter.query, filter.caseSensitive, filter.level, showOnlyPinned, selectedTab, pageSize]);
 
   React.useEffect(() => {
     const el: HTMLElement | null = (window as any).__LOG_LIST_CONTAINER__;
@@ -448,13 +575,6 @@ export function useLogState() {
     return [{ id: ALL_TAB_ID, label: "Tutti", count: allLines.length }, ...entries];
   }, [files, allLines.length]);
 
-  // Totale reale e info provider
-  const currentTotal = React.useMemo<number | undefined>(() => {
-    if (selectedTab === ALL_TAB_ID) return undefined;
-    const prov = providersRef.current.get(selectedTab);
-    return undefined; // usato solo come "signal"; la funzione below è async
-  }, [selectedTab]);
-
   const [resolvedTotal, setResolvedTotal] = React.useState<number | undefined>(undefined);
   React.useEffect(() => {
     (async () => {
@@ -476,7 +596,7 @@ export function useLogState() {
     if (selectedTab === ALL_TAB_ID) return false;
     const prov = providersRef.current.get(selectedTab);
     return prov?.kind === "large";
-  }, [selectedTab, providersRef.current.size]); // size non cambia, ma teniamo dipendenze minimali
+  }, [selectedTab, providersRef.current.size]);
 
   const onChangeMaxLines = (val: number) => {
     const v = Math.max(1000, Math.min(500000, Math.floor(val)));
@@ -519,8 +639,10 @@ export function useLogState() {
     loadMoreDown,
     jumpToLine,
     handleLoadMoreTop: loadMoreUp,
-    // nuovi
     currentTotal: resolvedTotal,
     isLargeProvider,
+    // nuovi metodi
+    jumpToStart,
+    jumpToEnd,
   };
 }

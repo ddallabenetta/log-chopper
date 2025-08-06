@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Upload, Regex, CaseSensitive, Pin, Filter, Navigation, ArrowDownToLine, Target, ChevronUp, ChevronDown } from "lucide-react";
+import { Upload, Pin, Filter, Navigation, ArrowDownToLine, Target, ChevronUp, ChevronDown, ChevronsUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -27,6 +27,9 @@ type Props = {
   onPrevMatch?: () => void;
   onNextMatch?: () => void;
   matchesEnabled?: boolean;
+  // nuovi
+  onGoToStart?: () => void;
+  onGoToEnd?: () => void;
 };
 
 const LEVEL_OPTIONS = (t: (k: string) => string): Array<{ label: string; value: FilterConfig["level"] }> => [
@@ -63,6 +66,8 @@ export default function LogControls({
   onPrevMatch,
   onNextMatch,
   matchesEnabled = false,
+  onGoToStart,
+  onGoToEnd,
 }: Props) {
   const { t } = useI18n();
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -104,20 +109,11 @@ export default function LogControls({
     return Array.from(s).sort();
   }, [pinnedIds]);
 
-  const goBottom = () => {
-    (window as any).__LOG_LIST_SCROLL_TO_BOTTOM__?.();
-  };
-
   const triggerJump = () => {
     const n = Number(jumpLine);
     if (!Number.isFinite(n) || n <= 0) return;
     onJumpToLine?.(Math.floor(n));
   };
-
-  const hasActiveFilter =
-    showOnlyPinned ||
-    filter.level !== "ALL" ||
-    (filter.query && filter.query.trim().length > 0);
 
   return (
     <div className="w-full space-y-3">
@@ -225,7 +221,7 @@ export default function LogControls({
       <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-sm">
         <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="secondary">
-            {hasActiveFilter ? "Corrispondenze" : t("totals")}: {totalCount}
+            {(showOnlyPinned || filter.level !== "ALL" || (filter.query && filter.query.trim().length > 0)) ? "Corrispondenze" : t("totals")}: {totalCount}
           </Badge>
           <Badge>{t("visible")}: {visibleCount}</Badge>
           <Badge variant="outline">{t("pinned")}: {pinnedCount}</Badge>
@@ -253,10 +249,21 @@ export default function LogControls({
           </div>
 
           <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-2"
+            onClick={onGoToStart}
+            title="Vai all'inizio"
+          >
+            <ChevronsUp className="h-4 w-4" />
+            Inizio
+          </Button>
+
+          <Button
             variant="default"
             size="sm"
             className="h-8 gap-2 shadow hover:shadow-md transition-shadow"
-            onClick={goBottom}
+            onClick={onGoToEnd}
             title={t("go_bottom")}
           >
             <ArrowDownToLine className="h-4 w-4" />

@@ -52,6 +52,9 @@ export default function LogViewer() {
     jumpToLine,
     currentTotal,
     isLargeProvider,
+    // nuovi
+    jumpToStart,
+    jumpToEnd,
   } = useLogState();
 
   const [ready, setReady] = React.useState(false);
@@ -151,6 +154,20 @@ export default function LogViewer() {
 
   const currentMatchId = matchIndex >= 0 ? matchIds[matchIndex] : null;
 
+  // Nuove azioni: start/end assoluti su file correnti
+  const handleGoToStart = () => {
+    if (selectedTab === ALL_TAB_ID) return;
+    void jumpToStart();
+  };
+  const handleGoToEnd = () => {
+    if (selectedTab === ALL_TAB_ID) {
+      // per ALL usiamo il vecchio scroll-to-bottom
+      (window as any).__LOG_LIST_SCROLL_TO_BOTTOM__?.();
+      return;
+    }
+    void jumpToEnd();
+  };
+
   return (
     <Card className="w-screen h-[calc(100vh-56px)] max-w-none rounded-none border-0 flex flex-col overflow-hidden">
       {isRestoring && (
@@ -199,6 +216,9 @@ export default function LogViewer() {
             onPrevMatch={goPrevMatch}
             onNextMatch={goNextMatch}
             matchesEnabled={hasActiveFilter && matchIds.length > 0}
+            // nuovi
+            onGoToStart={handleGoToStart}
+            onGoToEnd={handleGoToEnd}
           />
         </div>
 
