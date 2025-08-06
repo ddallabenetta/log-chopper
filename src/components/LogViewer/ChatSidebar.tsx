@@ -362,63 +362,63 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
   return (
     <div className={cn("h-full flex flex-col border-l bg-transparent", className)} style={{ width: open ? 460 : 56 }}>
       <div className="p-2 h-full">
-        <Card className="h-full flex flex-col overflow-hidden">
-          <ChatHeader
-            open={open}
-            showSettings={showSettings}
-            onToggleOpen={() => setOpen(!open)}
-            onToggleSettings={() => setShowSettings((v) => !v)}
-          />
+        {open ? (
+          <Card className="h-full flex flex-col overflow-hidden">
+            <ChatHeader
+              open={open}
+              showSettings={showSettings}
+              onToggleOpen={() => setOpen(!open)}
+              onToggleSettings={() => setShowSettings((v) => !v)}
+            />
 
-          {open ? (
-            <>
-              {showSettings && (
-                <ChatSettings
-                  provider={provider}
-                  setProvider={setProvider}
-                  model={model}
-                  setModel={setModel}
-                  apiKey={apiKey}
-                  setApiKey={setApiKey}
-                  ollamaEndpoint={ollamaEndpoint}
-                  setOllamaEndpoint={setOllamaEndpoint}
-                  enableCompression={enableCompression}
-                  setEnableCompression={setEnableCompression}
-                  compression={compression}
-                  setCompression={setCompression}
-                  providerModels={PROVIDER_MODELS as any}
-                />
-              )}
-
-              <ChatMessages
-                messages={messages}
-                loading={loading}
-                streamBuffer={streamBuffer}
-                input={input}
-                setInput={setInput}
-                onSend={() => void send()}
-                onStop={() => setLoading(false)}
-                listRef={listRef}
+            {showSettings && (
+              <ChatSettings
+                provider={provider}
+                setProvider={setProvider}
+                model={model}
+                setModel={setModel}
+                apiKey={apiKey}
+                setApiKey={setApiKey}
+                ollamaEndpoint={ollamaEndpoint}
+                setOllamaEndpoint={setOllamaEndpoint}
+                enableCompression={enableCompression}
+                setEnableCompression={setEnableCompression}
+                compression={compression}
+                setCompression={setCompression}
+                providerModels={PROVIDER_MODELS as any}
               />
-            </>
-          ) : (
-            <div className="flex-1 min-h-0 grid place-items-center p-4">
-              <button
-                onClick={() => setOpen(true)}
-                title="Apri chat"
-                className={[
-                  "inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm",
-                  "bg-primary text-primary-foreground hover:opacity-90",
-                  "shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                ].join(" ")}
-                aria-label="Apri chat"
-              >
-                <PanelRightOpen className="h-4 w-4" />
-                Apri chat
-              </button>
-            </div>
-          )}
-        </Card>
+            )}
+
+            <ChatMessages
+              messages={messages}
+              loading={loading}
+              streamBuffer={streamBuffer}
+              input={input}
+              setInput={setInput}
+              onSend={() => void send()}
+              onStop={() => setLoading(false)}
+              listRef={listRef}
+            />
+          </Card>
+        ) : (
+          <div className="h-full grid place-items-center">
+            <button
+              onClick={() => setOpen(true)}
+              title="Apri chat"
+              className={[
+                "inline-flex items-center justify-center",
+                "h-12 w-12 rounded-full border",
+                "bg-background text-foreground",
+                "shadow-sm hover:bg-accent hover:text-accent-foreground",
+                "transition-colors focus:outline-none",
+                "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              ].join(" ")}
+              aria-label="Apri chat"
+            >
+              <PanelRightOpen className="h-5 w-5" />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
