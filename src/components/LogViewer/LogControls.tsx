@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import type { FilterConfig, FilterMode } from "./LogTypes";
+import { useI18n } from "@/components/i18n/I18nProvider";
 
 type Props = {
   filter: FilterConfig;
@@ -24,14 +25,14 @@ type Props = {
   onJumpToId?: (id: string) => void;
 };
 
-const LEVEL_OPTIONS: Array<{ label: string; value: FilterConfig["level"] }> = [
-  { label: "Tutti", value: "ALL" },
-  { label: "Trace", value: "TRACE" },
-  { label: "Debug", value: "DEBUG" },
-  { label: "Info", value: "INFO" },
-  { label: "Warn", value: "WARN" },
-  { label: "Error", value: "ERROR" },
-  { label: "Altro", value: "OTHER" },
+const LEVEL_OPTIONS = (t: (k: string) => string): Array<{ label: string; value: FilterConfig["level"] }> => [
+  { label: t("level_all"), value: "ALL" },
+  { label: t("level_trace"), value: "TRACE" },
+  { label: t("level_debug"), value: "DEBUG" },
+  { label: t("level_info"), value: "INFO" },
+  { label: t("level_warn"), value: "WARN" },
+  { label: t("level_error"), value: "ERROR" },
+  { label: t("level_other"), value: "OTHER" },
 ];
 
 function useDebouncedValue<T>(value: T, delay = 200) {
@@ -56,6 +57,7 @@ export default function LogControls({
   pinnedIds = [],
   onJumpToId,
 }: Props) {
+  const { t } = useI18n();
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const [localQuery, setLocalQuery] = React.useState(filter.query);
@@ -84,7 +86,6 @@ export default function LogControls({
     onFilterChange({ ...filter, mode });
   };
 
-  // Dedup rigoroso: normalizza (trim), filtra falsy e crea Set; poi ordina
   const uniquePinned = React.useMemo(() => {
     const s = new Set<string>();
     for (const raw of pinnedIds) {
@@ -96,7 +97,7 @@ export default function LogControls({
 
   return (
     <div className="w-full space-y-3">
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+      <div className("flex flex-col sm:flex-row items-stretch sm:items-center gap-2")>
         <div className="flex items-center gap-2">
           <input
             ref={fileInputRef}
@@ -112,10 +113,10 @@ export default function LogControls({
             className="whitespace-nowrap"
           >
             <Upload className="mr-2 h-4 w-4" />
-            Carica log
+            {t("upload_logs")}
           </Button>
           <Button variant="secondary" onClick={onClearAll}>
-            Svuota
+            {t("clear")}
           </Button>
         </div>
 
@@ -123,8 +124,8 @@ export default function LogControls({
           <Input
             placeholder={
               filter.mode === "regex"
-                ? "Filtra per regex (es: error|warn)"
-                : "Filtra per testo (es: error)"
+                ? t("filter_regex_placeholder")
+                : t("filter_text_placeholder")
             }
             value={localQuery}
             onChange={(e) => setLocalQuery(e.target.value)}
@@ -135,15 +136,15 @@ export default function LogControls({
           >
             <TabsList>
               <TabsTrigger value="text" className="gap-1">
-                <CaseSensitive className="h-4 w-4" /> Testo
+                <CaseSensitive className="h-4 w-4" /> {t("text")}
               </TabsTrigger>
               <TabsTrigger value="regex" className="gap-1">
-                <Regex className="h-4 w-4" /> Regex
+                <Regex className="h-4 w-4" /> {t("regex")}
               </TabsTrigger>
             </TabsList>
           </Tabs>
           <div className="flex items-center gap-2 px-2">
-            <span className="text-sm text-muted-foreground">Case sensitive</span>
+            <span className="text-sm text-muted-foreground">{t("case_sensitive")}</span>
             <Switch
               checked={filter.caseSensitive}
               onCheckedChange={(v) => onFilterChange({ ...filter, caseSensitive: v })}
@@ -159,7 +160,7 @@ export default function LogControls({
                 onFilterChange({ ...filter, level: e.target.value as FilterConfig["level"] })
               }
             >
-              {LEVEL_OPTIONS.map((opt) => (
+              {LEVEL_OPTIONS(t).map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>
@@ -174,20 +175,20 @@ export default function LogControls({
             title="Mostra solo le righe pinnate"
           >
             <Pin className="h-4 w-4" />
-            Pinned
+            {t("pinned")}
           </Button>
         </div>
       </div>
 
       <div className="flex items-center gap-2 text-sm">
-        <Badge variant="secondary">Totali: {totalCount}</Badge>
-        <Badge>Visibili: {visibleCount}</Badge>
-        <Badge variant="outline">Pinned: {pinnedCount}</Badge>
+        <Badge variant="secondary">{t("totals")}: {totalCount}</Badge>
+        <Badge>{t("visible")}: {visibleCount}</Badge>
+        <Badge variant="outline">{t("pinned")}: {pinnedCount}</Badge>
       </div>
 
       {uniquePinned.length > 0 && (
         <div className="rounded-md border p-2">
-          <div className="text-xs font-medium mb-1">Pinned</div>
+          <div className="text-xs font-medium mb-1">{t("pinned")}</div>
           <div className="flex flex-wrap gap-2">
             {uniquePinned.map((id) => (
               <Button

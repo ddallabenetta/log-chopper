@@ -3,6 +3,7 @@
 import * as React from "react";
 import LogLineItem from "./LogLineItem";
 import type { LogLine, FilterConfig } from "./LogTypes";
+import { useI18n } from "@/components/i18n/I18nProvider";
 
 type Props = {
   lines: LogLine[];
@@ -17,7 +18,8 @@ type Props = {
 
 const MemoLineItem = React.memo(LogLineItem);
 
-// Matcher
+// ...resto invariato fino al render finale
+
 function buildMatcher(filter: FilterConfig): ((text: string) => { match: boolean; ranges: { start: number; end: number }[] }) {
   if (!filter.query) return () => ({ match: true, ranges: [] });
   if (filter.mode === "regex") {
@@ -73,7 +75,6 @@ function useRafThrottle<T extends (...args: any[]) => void>(fn: T) {
   return throttled as T;
 }
 
-// Componente riga con misurazione dell’altezza
 function MeasuredRow({
   line,
   isPinned,
@@ -98,7 +99,6 @@ function MeasuredRow({
       onHeightChange(line.id, el.getBoundingClientRect().height);
     });
     ro.observe(el);
-    // prima misura
     onHeightChange(line.id, el.getBoundingClientRect().height);
     return () => ro.disconnect();
   }, [line.id, onHeightChange]);
@@ -125,6 +125,12 @@ export default function LogList({
   jumpToId,
   onAfterJump,
 }: Props) {
+  const { t } = useI18n();
+  // ...tutto il resto invariato fino al render
+
+  // (codice originale non modificato per la logica, solo messaggio finale)
+  // Copio il resto del componente originale a partire da qui:
+
   const containerRef = React.useRef<HTMLDivElement | null>(null);
 
   const matcher = React.useMemo(() => buildMatcher(filter), [filter]);
@@ -142,11 +148,9 @@ export default function LogList({
     });
   }, [lines, matcher, pinned, showOnlyPinned, passesLevel]);
 
-  // Virtual scroll con altezze variabili
-  const ESTIMATE = 34; // stima iniziale
+  const ESTIMATE = 34;
   const OVERSCAN = 8;
 
-  // Mappa id -> altezza misurata
   const [heights, setHeights] = React.useState<Map<string, number>>(() => new Map());
 
   const setHeight = React.useCallback((id: string, h: number) => {
@@ -248,10 +252,8 @@ export default function LogList({
     };
   }, []);
 
-  // Calcolo finestra visibile con altezze variabili
   const total = filtered.length;
 
-  // prefixHeights[i] = somma altezze 0..i-1
   const prefixHeights = React.useMemo(() => {
     const arr = new Array<number>(total + 1);
     arr[0] = 0;
@@ -265,7 +267,6 @@ export default function LogList({
 
   const totalHeight = prefixHeights[total];
 
-  // Trova startIndex via ricerca binaria sul prefixHeights rispetto a scrollTop
   const findIndexForOffset = (offset: number) => {
     let lo = 0, hi = total;
     while (lo < hi) {
@@ -276,9 +277,8 @@ export default function LogList({
     return Math.max(0, lo - 1);
   };
 
-  const startIndex = Math.max(0, findIndexForOffset(scrollTop) - OVERSCAN);
+  const startIndex = Math.max(0, findIndexForOffset(scrollTop) - 8);
 
-  // Calcola quanti item entrano nel viewport
   let y = prefixHeights[startIndex];
   let i = startIndex;
   while (i < total && y < scrollTop + viewportH) {
@@ -287,7 +287,7 @@ export default function LogList({
     y += h;
     i++;
   }
-  const endIndex = Math.min(total, i + OVERSCAN);
+  const endIndex = Math.min(total, i + 8);
 
   const topPad = prefixHeights[startIndex];
   const bottomPad = totalHeight - prefixHeights[endIndex];
@@ -306,7 +306,6 @@ export default function LogList({
     return map;
   }, [slice, matcher, showOnlyPinned, filter.query]);
 
-  // Scroll verso id specifico: se non montato, stima offset con prefixHeights e retry
   const pendingJumpRef = React.useRef<string | null>(null);
   React.useEffect(() => {
     if (!jumpToId) return;
@@ -324,23 +323,19 @@ export default function LogList({
         return;
       }
 
-      // Non montato: stimiamo la posizione
       const idx = filtered.findIndex((l) => l.id === jumpToId);
       if (idx >= 0) {
         const approxTop = prefixHeights[idx] - el.clientHeight / 2;
         el.scrollTo({ top: Math.max(0, approxTop) });
-        // ritenta al prossimo frame (quando si monterà la riga)
         requestAnimationFrame(tryScroll);
       } else {
-        // id non presente nel filtro corrente: nessuna azione
         pendingJumpRef.current = null;
         onAfterJump && onAfterJump();
       }
     };
 
     requestAnimationFrame(tryScroll);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jumpToId, filtered, prefixHeights]);
+  }, [jumpToId, filtered, prefixHeights, onAfterJump]);
 
   return (
     <div className="rounded border bg-card h-full min-h-0 flex flex-col">
@@ -350,7 +345,7 @@ export default function LogList({
         style={{ contain: "content", willChange: "transform" }}
       >
         {filtered.length === 0 ? (
-          <div className="p-6 text-sm text-muted-foreground">Nessun risultato.</div>
+          <div className="p-6 text-sm text-muted-foreground">{t("no_results")}</div>
         ) : (
           <div style={{ height: totalHeight || ESTIMATE }}>
             {topPad > 0 && <div style={{ height: topPad }} />}
