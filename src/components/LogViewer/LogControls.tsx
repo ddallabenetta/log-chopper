@@ -97,7 +97,7 @@ export default function LogControls({
 
   return (
     <div className="w-full space-y-3">
-      <div className("flex flex-col sm:flex-row items-stretch sm:items-center gap-2")>
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
         <div className="flex items-center gap-2">
           <input
             ref={fileInputRef}
