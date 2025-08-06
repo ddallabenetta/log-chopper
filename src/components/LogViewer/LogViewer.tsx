@@ -189,7 +189,7 @@ export default function LogViewer() {
             onJumpToLine={jumpToLine}
             onPrevMatch={goPrevMatch}
             onNextMatch={goNextMatch}
-            matchesEnabled={hasActiveFilter && matchIds.length > 0}
+            matchesEnabled={!!(hasActiveFilter && matchIds.length > 0)}
             onGoToStart={handleGoToStart}
             onGoToEnd={handleGoToEnd}
           />
