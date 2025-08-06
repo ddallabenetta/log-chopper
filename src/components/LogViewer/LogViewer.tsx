@@ -18,7 +18,6 @@ const LS_CHAT_OPEN_KEY = "logviewer.chat.open.v1";
 export default function LogViewer() {
   const { t } = useI18n();
   const {
-    // state
     files,
     filter,
     showOnlyPinned,
@@ -34,7 +33,6 @@ export default function LogViewer() {
     visibleCount,
     pinnedIdsFlat,
     fileTabs,
-    // actions
     setFilter,
     setShowOnlyPinned,
     setIsDragging,
@@ -50,27 +48,25 @@ export default function LogViewer() {
     addEmptyTab,
   } = useLogState();
 
-  // Evita flicker: fino a quando non è il client, non mostriamo la chat
+  // Stato "pronto" client per evitare qualsiasi render della chat prima di leggere la preferenza
   const [ready, setReady] = React.useState(false);
+  const [chatOpen, setChatOpen] = React.useState<boolean>(true);
 
-  // Inizializza leggendo subito localStorage (default true se non presente)
-  const [chatOpen, setChatOpen] = React.useState<boolean>(() => {
-    if (typeof window === "undefined") return true; // SSR: default aperto
-    const raw = window.localStorage.getItem(LS_CHAT_OPEN_KEY);
-    return raw === "0" ? false : true;
-    });
-
+  // Alla prima mount sul client, leggi la preferenza e imposta ready
   React.useEffect(() => {
-    // Siamo sul client: assicuriamoci di leggere ancora localStorage nel caso di navigazioni client
     try {
       const raw = window.localStorage.getItem(LS_CHAT_OPEN_KEY);
       if (raw === "0") setChatOpen(false);
       else if (raw === "1") setChatOpen(true);
-    } catch {}
-    setReady(true);
+      else setChatOpen(true); // default aperto
+    } catch {
+      setChatOpen(true);
+    } finally {
+      setReady(true);
+    }
   }, []);
 
-  // Salva preferenza ogni volta che cambia
+  // Salva preferenza quando cambia, solo dopo che siamo pronti
   React.useEffect(() => {
     if (!ready) return;
     try {
@@ -195,9 +191,12 @@ export default function LogViewer() {
               )}
             </div>
 
-            {ready && chatOpen ? (
+            {!ready ? (
+              // Riserviamo lo spazio ma non mostriamo ancora nulla della chat finché non siamo pronti
+              <div className="w-14 shrink-0" />
+            ) : chatOpen ? (
               <ChatSidebar lines={currentLines} pinnedIds={pinnedIdsFlat} filter={filter} />
-            ) : ready && !chatOpen ? (
+            ) : (
               <div className="h-full flex items-center">
                 <Button
                   variant="default"
@@ -213,9 +212,6 @@ export default function LogViewer() {
                   <span>Assistant</span>
                 </div>
               </div>
-            ) : (
-              // Non renderizzare nulla della chat finché non siamo pronti (evita flicker)
-              <div className="w-14 shrink-0" />
             )}
           </div>
         </div>
