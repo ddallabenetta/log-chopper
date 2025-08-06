@@ -3,10 +3,9 @@
 import * as React from "react";
 import { toast } from "sonner";
 import type { FilterConfig, LogLine, ParsedFile, LogLevel } from "../LogTypes";
-import { idbLoadState, idbUpdatePinned, idbClearAll } from "@/lib/idb";
+import { idbLoadState, idbUpdatePinned, idbClearAll, idbGetFilesMeta, idbDeleteFile, idbHasFile } from "@/lib/idb";
 import { dedupeById } from "./log-helpers";
 import { LARGE_FILE_THRESHOLD, createIdbProvider, createLargeProvider, type LineProvider } from "./line-provider";
-import { getAllFilesMeta } from "./log-pagination";
 
 export type FileIngestStats = {
   fileName: string;
@@ -18,18 +17,16 @@ export const ALL_TAB_ID = "__ALL__";
 
 const LS_PAGE_SIZE = "logviewer.pageSize.v1";
 
-// Contatore per tab vuote
 let emptyTabCounter = 1;
 
 export function useLogState() {
-  // State base
   const [files, setFiles] = React.useState<ParsedFile[]>([]);
   const [allLines, setAllLines] = React.useState<LogLine[]>([]);
   const [pinnedByFile, setPinnedByFile] = React.useState<Map<string, Set<string>>>(new Map());
   const [filter, setFilter] = React.useState<FilterConfig>({ query: "", mode: "text", caseSensitive: false, level: "ALL" });
   const [showOnlyPinned, setShowOnlyPinned] = React.useState(false);
 
-  const [maxLines, setMaxLines] = React.useState<number>(50000); // compat
+  const [maxLines, setMaxLines] = React.useState<number>(50000);
 
   const [isDragging, setIsDragging] = React.useState(false);
   const [ingesting, setIngesting] = React.useState(false);
@@ -39,7 +36,6 @@ export function useLogState() {
   const [pendingJumpId, setPendingJumpId] = React.useState<string | null>(null);
   const [selectedTab, setSelectedTab] = React.useState<string>(ALL_TAB_ID);
 
-  // Manteniamo pageSize internamente per bilanciare caricamenti (non mostrato in UI)
   const [pageSize, setPageSize] = React.useState<number>(() => {
     if (typeof window === "undefined") return 20000;
     const raw = window.localStorage.getItem(LS_PAGE_SIZE);
@@ -52,19 +48,17 @@ export function useLogState() {
     } catch {}
   }, [pageSize]);
 
-  // Provider per fileName -> provider
   const providersRef = React.useRef<Map<string, LineProvider>>(new Map());
-
-  // Semplici guardie di caricamento per evitare richieste sovrapposte
   const loadingUpRef = React.useRef(false);
   const loadingDownRef = React.useRef(false);
 
-  // Restore pinned e meta file
+  // Restore da IDB: ripristina meta, pinned e, se presente il file in IDB, crea provider e carica tail
   React.useEffect(() => {
     (async () => {
       setIsRestoring(true);
+
       const saved = await idbLoadState();
-      const metaFiles = await getAllFilesMeta();
+      const metaFiles = await idbGetFilesMeta();
 
       setFiles(metaFiles.map((m) => ({ fileName: m.fileName, lines: [], totalLines: m.totalLines })));
 
@@ -78,7 +72,20 @@ export function useLogState() {
       }
       setPinnedByFile(nextPinned);
 
-      if (!metaFiles || metaFiles.length === 0) {
+      // Crea provider IDB per ciascun file presente e carica tail
+      for (const f of metaFiles) {
+        const exists = await idbHasFile(f.fileName);
+        if (!exists) continue;
+        const provider = await createIdbProvider(f.fileName);
+        providersRef.current.set(f.fileName, provider);
+        const tail = await provider.tail(Math.min(pageSize, f.totalLines));
+        setAllLines((prev) => {
+          const others = prev.filter((l) => l.fileName !== f.fileName);
+          return dedupeById([...others, ...tail]);
+        });
+      }
+
+      if (metaFiles.length === 0) {
         const id = `Nuova-${emptyTabCounter++}`;
         setFiles([{ fileName: id, lines: [], totalLines: 0 }]);
         setSelectedTab(id);
@@ -88,7 +95,7 @@ export function useLogState() {
 
       setIsRestoring(false);
     })();
-  }, []);
+  }, [pageSize]);
 
   const addEmptyTab = React.useCallback(() => {
     const id = `Nuova-${emptyTabCounter++}`;
@@ -99,7 +106,6 @@ export function useLogState() {
     return id;
   }, []);
 
-  // Import: small vs large provider
   const addFiles = async (list: FileList | File[]) => {
     const arr = Array.from(list);
     if (arr.length === 0) return;
@@ -114,7 +120,6 @@ export function useLogState() {
       importedNames.push(f.name);
 
       if (f.size > LARGE_FILE_THRESHOLD) {
-        // LARGE provider
         const provider = await createLargeProvider(f);
         providersRef.current.set(f.name, provider);
 
@@ -128,11 +133,10 @@ export function useLogState() {
 
         newStats.push({ fileName: f.name, totalLines: total, droppedLines: 0 });
       } else {
-        // SMALL: indicizzazione e salvataggio in IDB, poi provider idb
+        // Small: indicizza e salva su IDB, poi provider IDB
         const largeTemp = await (await import("./large-file-index")).buildLargeFileIndex(f);
         const total = largeTemp.totalLines;
 
-        // Salva su IDB a blocchi
         const BLOCK = 20000;
         for (let from = 1; from <= total; from += BLOCK) {
           const to = Math.min(total, from + BLOCK - 1);
@@ -152,12 +156,10 @@ export function useLogState() {
           await updateFileTotal(f.name, to);
         }
 
-        // Provider IDB e tail immediato
         const provider = await createIdbProvider(f.name);
         providersRef.current.set(f.name, provider);
 
         setFiles((prev) => upsertFile(prev, { fileName: f.name, lines: [], totalLines: total }));
-
         const tail = await provider.tail(Math.min(pageSize, total));
         setAllLines((prev) => {
           const others = prev.filter((l) => l.fileName !== f.name);
@@ -171,7 +173,6 @@ export function useLogState() {
     setIngestStats(newStats);
     setIngesting(false);
 
-    // Se eravamo su una tab vuota, rimuovila
     if (wasOnNewTab) {
       setFiles((prev) => prev.filter((f) => f.fileName !== selectedTab));
     }
@@ -191,11 +192,10 @@ export function useLogState() {
     return next;
   };
 
-  const closeFileTab = (fileName: string) => {
+  const closeFileTab = async (fileName: string) => {
     if (!fileName || fileName === ALL_TAB_ID) return;
 
-    const prov = providersRef.current.get(fileName);
-    prov?.dispose?.();
+    providersRef.current.get(fileName)?.dispose?.();
     providersRef.current.delete(fileName);
 
     setAllLines((prev) => prev.filter((l) => l.fileName !== fileName));
@@ -207,6 +207,10 @@ export function useLogState() {
       idbUpdatePinned(flat);
       return next;
     });
+
+    // Elimina definitivamente i dati del file dalla IDB
+    await idbDeleteFile(fileName);
+
     setSelectedTab((cur) => (cur === fileName ? ALL_TAB_ID : cur));
     toast.message(`Tab chiusa: ${fileName}`);
   };
@@ -329,7 +333,6 @@ export function useLogState() {
 
   const onJumpToId = (id: string) => setPendingJumpId(id);
 
-  // Ricarica coda quando cambia tab o pageSize
   React.useEffect(() => {
     (async () => {
       const tab = selectedTab;
@@ -353,7 +356,6 @@ export function useLogState() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTab, pageSize]);
 
-  // Precaricamento automatico: se l’utente è vicino ai margini, carica blocchi
   React.useEffect(() => {
     const el: HTMLElement | null = (window as any).__LOG_LIST_CONTAINER__;
     if (!el) return;
@@ -374,7 +376,6 @@ export function useLogState() {
     return () => el.removeEventListener("scroll", onScroll);
   }, [selectedTab, allLines.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Derived
   const currentLines = React.useMemo<LogLine[]>(() => {
     if (selectedTab === ALL_TAB_ID) return allLines;
     return allLines.filter((l) => l.fileName === selectedTab);
@@ -393,10 +394,10 @@ export function useLogState() {
     const pinned = currentPinnedSet;
     if (showOnlyPinned) return Array.from(pinned).length;
 
-    const passesLevel = (lvl: LogLevel) => (filter.level === "ALL" ? true : lvl === filter.level);
+    const passesLevel = (lvl: LogLevel) => (filter.level === "ALL" ? true : lvl === "OTHER" ? "OTHER" === filter.level : lvl === filter.level);
 
     if (!filter.query) {
-      return currentLines.reduce((acc, l) => (passesLevel(l.level) || pinned.has(l.id) ? acc + 1 : acc), 0);
+      return currentLines.reduce((acc, l) => (passesLevel(l.level as LogLevel) || pinned.has(l.id) ? acc + 1 : acc), 0);
     }
 
     const flags = filter.caseSensitive ? "" : "i";
@@ -404,14 +405,14 @@ export function useLogState() {
       if (filter.mode === "regex") {
         const re = new RegExp(filter.query, flags);
         return currentLines.reduce(
-          (acc, l) => ((passesLevel(l.level) && re.test(l.content)) || pinned.has(l.id) ? acc + 1 : acc),
+          (acc, l) => (((l.level as LogLevel) && passesLevel(l.level as LogLevel) && re.test(l.content)) || pinned.has(l.id) ? acc + 1 : acc),
           0
         );
       }
       const needle = filter.caseSensitive ? filter.query : filter.query.toLowerCase();
       return currentLines.reduce((acc, l) => {
         const hay = filter.caseSensitive ? l.content : l.content.toLowerCase();
-        return (passesLevel(l.level) && hay.includes(needle)) || pinned.has(l.id) ? acc + 1 : acc;
+        return ((l.level as LogLevel) && passesLevel(l.level as LogLevel) && hay.includes(needle)) || pinned.has(l.id) ? acc + 1 : acc;
       }, 0);
     } catch {
       return Array.from(pinned).length;

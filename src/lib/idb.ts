@@ -70,10 +70,8 @@ export async function idbClearAll() {
 }
 
 export async function idbSaveState(state: IdbState) {
-  // Per retrocompat: manteniamo questa API, ma ora preferiamo append/get per range.
   await idbClearAll();
 
-  // Salva logs
   {
     const db = await openDB();
     const tx = db.transaction(STORE_LOGS, "readwrite");
@@ -88,7 +86,6 @@ export async function idbSaveState(state: IdbState) {
     });
   }
 
-  // Salva meta
   {
     const { tx, obj } = await txStore(STORE_META, "readwrite");
     obj.put(state.pinnedIds, "pinnedIds");
@@ -105,7 +102,6 @@ export async function idbSaveState(state: IdbState) {
 export async function idbLoadState(): Promise<IdbState | null> {
   const db = await openDB();
 
-  // Recupera meta
   const [pinnedIds, files, maxLines] = await Promise.all([
     new Promise<string[]>((resolve) => {
       const tx = db.transaction(STORE_META, "readonly");
@@ -130,7 +126,6 @@ export async function idbLoadState(): Promise<IdbState | null> {
     }),
   ]);
 
-  // Per compat, restituiamo allLines vuoto (d’ora in poi useremo letture per range)
   return { allLines: [], pinnedIds, files, maxLines };
 }
 
@@ -163,7 +158,6 @@ export async function idbGetFilesMeta(): Promise<{ fileName: string; totalLines:
   });
 }
 
-// Append batch di log
 export async function idbAppendLogs(lines: IdbLogLine[]) {
   if (!lines.length) return;
   const { tx, obj } = await txStore(STORE_LOGS, "readwrite");
@@ -175,7 +169,6 @@ export async function idbAppendLogs(lines: IdbLogLine[]) {
   });
 }
 
-// Legge un range per fileName e intervallo di lineNumber [from, to] inclusivo
 export async function idbGetLogsByRange(fileName: string, from: number, to: number): Promise<IdbLogLine[]> {
   if (to < from) return [];
   const db = await openDB();
@@ -190,7 +183,6 @@ export async function idbGetLogsByRange(fileName: string, from: number, to: numb
   });
 }
 
-// Ultime N righe di un file (per anteprima tail-first)
 export async function idbGetLastN(fileName: string, n: number): Promise<IdbLogLine[]> {
   const meta = await idbGetFilesMeta();
   const info = meta.find((m) => m.fileName === fileName);
@@ -200,11 +192,51 @@ export async function idbGetLastN(fileName: string, n: number): Promise<IdbLogLi
   return idbGetLogsByRange(fileName, from, to);
 }
 
-// Aggiorna totale righe per file
 export async function idbUpdateFileTotal(fileName: string, totalLines: number) {
   const list = await idbGetFilesMeta();
   const idx = list.findIndex((f) => f.fileName === fileName);
   if (idx >= 0) list[idx] = { fileName, totalLines };
   else list.push({ fileName, totalLines });
   await idbSetFilesMeta(list);
+}
+
+// Verifica se esistono righe per un file in IDB
+export async function idbHasFile(fileName: string): Promise<boolean> {
+  const db = await openDB();
+  const tx = db.transaction(STORE_LOGS, "readonly");
+  const store = tx.objectStore(STORE_LOGS);
+  const idx = store.index("by_file");
+  const req = idx.get(fileName);
+  return await new Promise((resolve) => {
+    req.onsuccess = () => resolve(!!req.result);
+    req.onerror = () => resolve(false);
+  });
+}
+
+// Cancella righe e meta relativi a un singolo file
+export async function idbDeleteFile(fileName: string) {
+  const db = await openDB();
+
+  // Cancella righe
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_LOGS, "readwrite");
+    const store = tx.objectStore(STORE_LOGS);
+    const idx = store.index("by_file");
+    const req = idx.openKeyCursor(IDBKeyRange.only(fileName));
+    req.onsuccess = () => {
+      const cursor = req.result;
+      if (cursor) {
+        store.delete(cursor.primaryKey as IDBValidKey);
+        cursor.continue();
+      } else {
+        resolve();
+      }
+    };
+    req.onerror = () => reject(req.error);
+  });
+
+  // Rimuovi meta "files" voce specifica
+  const files = await idbGetFilesMeta();
+  const filtered = files.filter((f) => f.fileName !== fileName);
+  await idbSetFilesMeta(filtered);
 }
