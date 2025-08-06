@@ -1,4 +1,3 @@
-=1px) in MeasuredRow.">
 "use client";
 
 import * as React from "react";
@@ -153,7 +152,6 @@ export default function LogList({
   }, [lines, matcher, pinned, showOnlyPinned, passesLevel]);
 
   const ESTIMATE = 34;
-  const OVERSCAN = 8;
 
   const [heights, setHeights] = React.useState<Map<string, number>>(() => new Map());
 
