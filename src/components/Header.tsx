@@ -24,7 +24,7 @@ export default function Header() {
             className="text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
             title={t("github_title")}
           >
-            {t("made_with")}
+            Made with 🤖 by @ddallabenetta
           </a>
         </div>
         <div className="flex items-center gap-2">
