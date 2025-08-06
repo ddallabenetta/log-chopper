@@ -63,13 +63,15 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
 
   const listRef = React.useRef<HTMLDivElement | null>(null);
 
+  // Config: visibili di default, poi persistite
   const LS_SETTINGS_OPEN = "logviewer.chat.settings.open";
-  const [showSettings, setShowSettings] = React.useState(false);
+  const [showSettings, setShowSettings] = React.useState(true);
   React.useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_SETTINGS_OPEN);
+      if (raw === "0") setShowSettings(false);
       if (raw === "1") setShowSettings(true);
-      else setShowSettings(false);
+      // Se non c'è nulla, restano visibili (default true)
     } catch {}
   }, []);
   React.useEffect(() => {
@@ -266,6 +268,9 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
   const send = async (question?: string) => {
     const q = (question ?? input).trim();
     if (!q) return;
+
+    // Nascondi le impostazioni al primo invio se sono visibili
+    if (showSettings) setShowSettings(false);
 
     setMessages((prev) => [...prev.filter((m) => m.role !== "system"), { role: "user", content: q }]);
     setInput("");
