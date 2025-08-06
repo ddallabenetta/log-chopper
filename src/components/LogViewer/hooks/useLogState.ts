@@ -88,7 +88,7 @@ export function useLogState() {
     (async () => {
       setIsRestoring(true);
       const saved = await idbLoadState();
-      if (saved) {
+      if (saved && saved.allLines && saved.allLines.length > 0) {
         const restoredLines: LogLine[] = saved.allLines.map((l) => ({
           id: l.id,
           fileName: l.fileName,
@@ -131,6 +131,13 @@ export function useLogState() {
         setMaxLines(saved.maxLines || 50000);
 
         pendingOlderRef.current = uniqueRestored.slice();
+        // Se c'è stato, seleziono ALL all'avvio
+        setSelectedTab(ALL_TAB_ID);
+      } else {
+        // Nessun stato salvato: crea una nuova tab vuota e selezionala
+        const initialId = `Nuova-${emptyTabCounter++}`;
+        setFiles([{ fileName: initialId, lines: [], totalLines: 0 }]);
+        setSelectedTab(initialId);
       }
       setIsRestoring(false);
     })();
@@ -287,6 +294,10 @@ export function useLogState() {
     pendingOlderRef.current = [];
     if (showToast) toast.message("Pulito");
     void idbClearAll();
+    // Dopo clear, crea una nuova tab vuota per comodità
+    const id = `Nuova-${emptyTabCounter++}`;
+    setFiles([{ fileName: id, lines: [], totalLines: 0 }]);
+    setSelectedTab(id);
   };
 
   const togglePin = (id: string) => {
