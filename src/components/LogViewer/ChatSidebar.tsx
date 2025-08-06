@@ -45,6 +45,7 @@ const PROVIDER_MODELS: Record<Exclude<Provider, "ollama">, { label: string; mode
 };
 
 export default function ChatSidebar({ lines, pinnedIds, className, open: openProp, onOpenChange }: Props) {
+  // Controllo apertura
   const [openUncontrolled, setOpenUncontrolled] = React.useState(true);
   const open = openProp ?? openUncontrolled;
   const setOpen = (v: boolean) => {
@@ -52,26 +53,29 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     else setOpenUncontrolled(v);
   };
 
+  // Stato configurazioni
   const [provider, setProvider] = React.useState<Provider>("openrouter");
   const [model, setModel] = React.useState<string>("openrouter/horizon-beta");
   const [apiKey, setApiKey] = React.useState<string>("");
   const [ollamaEndpoint, setOllamaEndpoint] = React.useState<string>("http://localhost:11434");
+
+  // Stato chat
   const [input, setInput] = React.useState("");
   const [messages, setMessages] = React.useState<Message[]>([{ role: "system", content: DEFAULT_SYSTEM_PROMPT }]);
   const [loading, setLoading] = React.useState(false);
   const [streamBuffer, setStreamBuffer] = React.useState<string>("");
 
+  // UI refs
   const listRef = React.useRef<HTMLDivElement | null>(null);
 
-  // Config: visibili di default, poi persistite
+  // Visibilità impostazioni: di default visibili, poi legge preferenza
   const LS_SETTINGS_OPEN = "logviewer.chat.settings.open";
   const [showSettings, setShowSettings] = React.useState(true);
   React.useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_SETTINGS_OPEN);
       if (raw === "0") setShowSettings(false);
-      if (raw === "1") setShowSettings(true);
-      // Se non c'è nulla, restano visibili (default true)
+      else if (raw === "1") setShowSettings(true);
     } catch {}
   }, []);
   React.useEffect(() => {
@@ -80,6 +84,7 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     } catch {}
   }, [showSettings]);
 
+  // Compression config
   const DEFAULT_COMPRESSION: CompressionConfig = {
     maxPinned: 120,
     maxOthers: 180,
@@ -90,6 +95,7 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
   const [compression, setCompression] = React.useState<CompressionConfig>(DEFAULT_COMPRESSION);
   const [enableCompression, setEnableCompression] = React.useState(true);
 
+  // Helpers
   function truncateMiddle(text: string, maxChars: number): string {
     if (text.length <= maxChars) return text;
     const keep = Math.max(10, Math.floor((maxChars - 3) / 2));
@@ -145,6 +151,7 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     };
   }, [lines, pinnedIds, compression]);
 
+  // API call
   async function callLLM(params: {
     provider: Provider;
     model: string;
@@ -210,6 +217,7 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     return data.choices?.[0]?.message?.content ?? "";
   }
 
+  // Persistenza configurazioni
   const LS_KEY = "logviewer.chat.config.v4";
   type SavedConfig = {
     provider: Provider;
@@ -219,24 +227,32 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     ollamaEndpoint?: string;
   };
 
+  // Load al mount
   React.useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_KEY);
       if (!raw) return;
       const parsed = JSON.parse(raw) as Partial<SavedConfig>;
+
       if (parsed.provider && ["openai", "deepseek", "openrouter", "ollama"].includes(parsed.provider)) {
         setProvider(parsed.provider as Provider);
       }
-      if (typeof parsed.model === "string" && parsed.model.trim()) setModel(parsed.model);
-      if (typeof parsed.apiKey === "string") setApiKey(parsed.apiKey);
-      if (parsed.ollamaEndpoint) setOllamaEndpoint(parsed.ollamaEndpoint);
+      if (typeof parsed.model === "string" && parsed.model.trim()) {
+        setModel(parsed.model);
+      }
+      if (typeof parsed.apiKey === "string") {
+        setApiKey(parsed.apiKey);
+      }
+      if (typeof parsed.ollamaEndpoint === "string" && parsed.ollamaEndpoint.trim()) {
+        setOllamaEndpoint(parsed.ollamaEndpoint);
+      }
       if (parsed.compression) {
         setCompression({
-          maxPinned: parsed.compression.maxPinned ?? compression.maxPinned,
-          maxOthers: parsed.compression.maxOthers ?? compression.maxOthers,
-          maxLineChars: parsed.compression.maxLineChars ?? compression.maxLineChars,
-          samplePerLevel: parsed.compression.samplePerLevel ?? compression.samplePerLevel,
-          includeStacks: parsed.compression.includeStacks ?? compression.includeStacks,
+          maxPinned: typeof parsed.compression.maxPinned === "number" ? parsed.compression.maxPinned : DEFAULT_COMPRESSION.maxPinned,
+          maxOthers: typeof parsed.compression.maxOthers === "number" ? parsed.compression.maxOthers : DEFAULT_COMPRESSION.maxOthers,
+          maxLineChars: typeof parsed.compression.maxLineChars === "number" ? parsed.compression.maxLineChars : DEFAULT_COMPRESSION.maxLineChars,
+          samplePerLevel: typeof parsed.compression.samplePerLevel === "number" ? parsed.compression.samplePerLevel : DEFAULT_COMPRESSION.samplePerLevel,
+          includeStacks: typeof parsed.compression.includeStacks === "boolean" ? parsed.compression.includeStacks : DEFAULT_COMPRESSION.includeStacks,
         });
         setEnableCompression(true);
       }
@@ -244,32 +260,38 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Save su cambio configurazioni
   React.useEffect(() => {
     const cfg: SavedConfig = { provider, model, apiKey, compression, ollamaEndpoint };
-    localStorage.setItem(LS_KEY, JSON.stringify(cfg));
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(cfg));
+    } catch {}
   }, [provider, model, apiKey, compression, ollamaEndpoint]);
 
+  // Auto-scroll
   React.useEffect(() => {
     const el = listRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight - el.clientHeight;
   }, [messages, streamBuffer, loading]);
 
+  // Imposta un model sensato se cambia provider
   React.useEffect(() => {
     setModel((prev) => {
       if (provider === "openrouter") return prev || "openrouter/horizon-beta";
       if (provider === "ollama") return prev || "llama3";
-      const first = [{ id: "gpt-4o-mini" }, { id: "gpt-4.1-mini" }][0]?.id;
-      return first ?? prev;
+      const first = "gpt-4o-mini";
+      return prev || first;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider]);
 
+  // Invio
   const send = async (question?: string) => {
     const q = (question ?? input).trim();
     if (!q) return;
 
-    // Nascondi le impostazioni al primo invio se sono visibili
+    // Nascondi impostazioni al primo invio se aperte
     if (showSettings) setShowSettings(false);
 
     setMessages((prev) => [...prev.filter((m) => m.role !== "system"), { role: "user", content: q }]);
