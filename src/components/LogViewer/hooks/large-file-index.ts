@@ -63,9 +63,8 @@ export async function buildLargeFileIndex(file: File, options?: { chunkSize?: nu
   }
 
   // Se il file termina con \n, l'ultimo offset punta a EOF e NON deve generare una riga vuota:
-  // count già rappresenta l'inizio riga; non aggiungiamo nulla.
   const totalLines = count;
-  const offsets = buf.subarray(0, totalLines) as typeof buf;
+  const offsets = (buf as typeof buf).subarray(0, totalLines);
 
   async function readLines(fromLine: number, toLine: number): Promise<string[]> {
     const from = Math.max(1, Math.min(totalLines, fromLine));
@@ -74,8 +73,7 @@ export async function buildLargeFileIndex(file: File, options?: { chunkSize?: nu
 
     const startByte = getOffset(offsets, use64, from - 1);
     // Se 'to' è l'ultima riga e il file non termina con \n, endByte = fileSize; altrimenti è l'offset della riga successiva.
-    const endByte =
-      to < totalLines ? getOffset(offsets, use64, to) : BigInt(fileSize);
+    const endByte = to < totalLines ? getOffset(offsets, use64, to) : BigInt(fileSize);
 
     const slice = await file.slice(Number(startByte), Number(endByte)).arrayBuffer();
     const raw = new Uint8Array(slice);
@@ -105,11 +103,15 @@ export async function buildLargeFileIndex(file: File, options?: { chunkSize?: nu
 }
 
 function growBuffer(buf: Uint32Array | BigUint64Array) {
-  const bigger = buf instanceof BigUint64Array
-    ? new BigUint64Array(Math.floor(buf.length * 1.6) + 2048)
-    : new Uint32Array(Math.floor(buf.length * 1.6) + 2048);
-  bigger.set(buf, 0);
-  return bigger;
+  if (buf instanceof BigUint64Array) {
+    const bigger = new BigUint64Array(Math.floor(buf.length * 1.6) + 2048);
+    bigger.set(buf);
+    return bigger;
+  } else {
+    const bigger = new Uint32Array(Math.floor(buf.length * 1.6) + 2048);
+    bigger.set(buf);
+    return bigger;
+  }
 }
 
 function getOffset(arr: Uint32Array | BigUint64Array, use64: boolean, idx: number): bigint {
