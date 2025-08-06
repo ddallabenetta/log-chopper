@@ -1,4 +1,4 @@
-import LogViewer from "@/components/LogViewer/LogViewer";
+import LogViewer from "../components/LogViewer/LogViewer";
 
 export default function Home() {
   return (
