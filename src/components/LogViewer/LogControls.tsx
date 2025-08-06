@@ -22,6 +22,9 @@ type Props = {
   onFilesSelected: (files: FileList) => void;
   pinnedIds?: string[];
   onJumpToId?: (id: string) => void;
+  // nuovi props per max righe
+  maxLines?: number;
+  onChangeMaxLines?: (v: number) => void;
 };
 
 const LEVEL_OPTIONS = (t: (k: string) => string): Array<{ label: string; value: FilterConfig["level"] }> => [
@@ -54,6 +57,8 @@ export default function LogControls({
   onFilesSelected,
   pinnedIds = [],
   onJumpToId,
+  maxLines,
+  onChangeMaxLines,
 }: Props) {
   const { t } = useI18n();
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -179,12 +184,30 @@ export default function LogControls({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 text-sm">
-        <Badge variant="secondary">{t("totals")}: {totalCount}</Badge>
-        <Badge>{t("visible")}: {visibleCount}</Badge>
-        <Badge variant="outline">{t("pinned")}: {pinnedCount}</Badge>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-sm">
+        <div className="flex items-center gap-2">
+          <Badge variant="secondary">{t("totals")}: {totalCount}</Badge>
+          <Badge>{t("visible")}: {visibleCount}</Badge>
+          <Badge variant="outline">{t("pinned")}: {pinnedCount}</Badge>
+        </div>
 
-        <div className="ml-auto">
+        <div className="flex-1" />
+
+        <div className="flex items-center gap-2">
+          {/* Max righe portato qui */}
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            {t("max_lines")}
+            <Input
+              type="number"
+              min={1000}
+              max={500000}
+              step={1000}
+              value={maxLines ?? 50000}
+              onChange={(e) => onChangeMaxLines?.(Number(e.target.value))}
+              className="h-8 w-28"
+            />
+          </label>
+
           <Button
             variant="default"
             size="sm"

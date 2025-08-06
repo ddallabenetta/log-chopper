@@ -8,7 +8,6 @@ import LogList from "./LogList";
 import ChatSidebar from "./ChatSidebar";
 import { useLogState, ALL_TAB_ID } from "./hooks/useLogState";
 import FileTabs, { type Tab as FileTab } from "./components/FileTabs";
-import TopBar from "./components/TopBar";
 import DragOverlay from "./components/DragOverlay";
 import { Button } from "@/components/ui/button";
 import { Bot, PanelRightOpen } from "lucide-react";
@@ -51,7 +50,6 @@ export default function LogViewer() {
     addEmptyTab, // new in hook
   } = useLogState();
 
-  // Ricorda apertura/chiusura chat
   const [chatOpen, setChatOpen] = React.useState(true);
   React.useEffect(() => {
     const raw = localStorage.getItem(LS_CHAT_OPEN_KEY);
@@ -89,7 +87,6 @@ export default function LogViewer() {
   };
 
   const handleCloseTab = (id: string) => {
-    // se è l'ultima tab “file” e chiudo, pulisco tutto
     const fileOnly = fileTabs.filter((t) => t.id !== ALL_TAB_ID);
     if (fileOnly.length <= 1 && id !== ALL_TAB_ID) {
       clearAll(false);
@@ -121,7 +118,6 @@ export default function LogViewer() {
         </div>
       )}
       <CardContent className="flex-1 min-h-0 flex flex-col overflow-hidden p-0">
-        {/* Tabs in alto */}
         <FileTabs
           tabs={tabsForRender}
           selected={selectedTab}
@@ -130,14 +126,7 @@ export default function LogViewer() {
           onNewTab={onNewTab}
         />
 
-        {/* Barra superiore con max lines e go bottom */}
-        <TopBar
-          maxLines={maxLines}
-          onChangeMaxLines={onChangeMaxLines}
-          hasLines={currentLines.length > 0}
-        />
-
-        {/* Controlli filtro/ricerca sotto le tabs */}
+        {/* Controlli filtro/ricerca e barra indicatori + max righe + vai in fondo */}
         <div className="shrink-0 p-3">
           <LogControls
             filter={filter}
@@ -148,9 +137,10 @@ export default function LogViewer() {
             showOnlyPinned={showOnlyPinned}
             onToggleShowOnlyPinned={() => setShowOnlyPinned((v) => !v)}
             onFilesSelected={(fl) => addFiles(fl)}
-            // rimosso bottone svuota: non passiamo più onClearAll
             pinnedIds={pinnedIdsFlat}
             onJumpToId={onJumpToId}
+            maxLines={maxLines}
+            onChangeMaxLines={onChangeMaxLines}
           />
         </div>
 
@@ -187,7 +177,6 @@ export default function LogViewer() {
               )}
             </div>
 
-            {/* Sidebar Chat opzionale */}
             {chatOpen ? (
               <ChatSidebar lines={currentLines} pinnedIds={pinnedIdsFlat} filter={filter} />
             ) : (
