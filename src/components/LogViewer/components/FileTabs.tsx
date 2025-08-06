@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { ALL_TAB_ID } from "../hooks/useLogState";
-import { Plus } from "lucide-react";
+import { Plus, X } from "lucide-react";
 
 export type Tab = { id: string; label: string; count: number };
 
@@ -19,6 +19,7 @@ export default function FileTabs({ tabs, selected, onSelect, onClose, onNewTab }
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   const [overflow, setOverflow] = React.useState(false);
   const [showSticky, setShowSticky] = React.useState(false);
+  const [hoveringCloseFor, setHoveringCloseFor] = React.useState<string | null>(null);
 
   const updateSticky = React.useCallback(() => {
     const el = scrollRef.current;
@@ -59,7 +60,6 @@ export default function FileTabs({ tabs, selected, onSelect, onClose, onNewTab }
   return (
     <div className="px-3 pt-2 pb-2 border-b bg-card/50">
       <div className="relative">
-        {/* Area scrollabile delle tab con padding a destra solo se esiste sticky */}
         <div
           ref={scrollRef}
           className={`flex items-center gap-2 overflow-x-auto ${overflow ? "pr-24" : ""}`}
@@ -68,14 +68,22 @@ export default function FileTabs({ tabs, selected, onSelect, onClose, onNewTab }
             {tabs.map((t) => {
               const active = t.id === selected;
               const isAll = t.id === ALL_TAB_ID;
+              const isHoverClosing = hoveringCloseFor === t.id;
+
               return (
-                <div key={t.id} className="flex items-center">
+                <div
+                  key={t.id}
+                  className={[
+                    "group flex items-center rounded-t-md",
+                    isHoverClosing ? "bg-accent/40" : active ? "bg-background" : ""
+                  ].join(" ")}
+                >
                   <button
                     onClick={() => onSelect(t.id)}
                     className={[
-                      "px-3 py-1.5 rounded-t-md border-b-2 text-sm whitespace-nowrap",
+                      "px-3 py-1.5 rounded-t-md border-b-2 text-sm whitespace-nowrap transition-colors",
                       active
-                        ? "border-primary text-foreground bg-background"
+                        ? "border-primary text-foreground"
                         : "border-transparent text-muted-foreground hover:text-foreground"
                     ].join(" ")}
                     title={t.label}
@@ -83,22 +91,27 @@ export default function FileTabs({ tabs, selected, onSelect, onClose, onNewTab }
                     <span className="font-medium">{t.label}</span>
                     <span className="ml-2 text-xs text-muted-foreground">({t.count})</span>
                   </button>
+
                   {!isAll && (
                     <Button
-                      variant="outline"
-                      size="sm"
-                      className="ml-1 px-1.5 h-7 text-xs rounded-b-none rounded-md"
-                      title={`Chiudi ${t.label}`}
+                      variant={active ? "default" : "outline"}
+                      size="icon"
+                      className={[
+                        "ml-1 h-7 w-7 rounded-b-none rounded-md transition-colors",
+                        active ? "bg-destructive/10 hover:bg-destructive/20" : "hover:bg-accent",
+                      ].join(" ")}
+                      title={`Chiudi: ${t.label}`}
+                      onMouseEnter={() => setHoveringCloseFor(t.id)}
+                      onMouseLeave={() => setHoveringCloseFor((cur) => (cur === t.id ? null : cur))}
                       onClick={() => onClose(t.id)}
                     >
-                      ×
+                      <X className="h-3.5 w-3.5" />
                     </Button>
                   )}
                 </div>
               );
             })}
 
-            {/* Pulsante inline: visibile quando non c’è overflow, oppure c’è overflow ma non siamo a fine destra */}
             {onNewTab && (!overflow || (overflow && !showSticky)) && (
               <div className="pl-2">
                 <Button
@@ -116,7 +129,6 @@ export default function FileTabs({ tabs, selected, onSelect, onClose, onNewTab }
           </div>
         </div>
 
-        {/* Sticky a destra: solo se overflow e utente è vicino al bordo destro */}
         {onNewTab && overflow && showSticky && (
           <div className="pointer-events-none absolute right-0 top-0 h-full w-28 flex items-center justify-end bg-gradient-to-l from-card via-card/70 to-transparent">
             <div className="pointer-events-auto pr-1">
