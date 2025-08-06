@@ -131,25 +131,34 @@ type I18nContextValue = {
   locale: Locale;
   t: (key: string) => string;
   setLocale: (l: Locale) => void;
+  ready: boolean;
 };
 
 const I18nContext = React.createContext<I18nContextValue | undefined>(undefined);
 
+// Per stabilità SSR: usa sempre "it" come default durante SSR
+const DEFAULT_LOCALE: Locale = "it";
+
 function detectSystemLocale(): Locale {
-  if (typeof navigator === "undefined") return "it";
-  const lang = navigator.language || (navigator as any).userLanguage || "it";
+  if (typeof navigator === "undefined") return DEFAULT_LOCALE;
+  const lang = navigator.language || (navigator as any).userLanguage || DEFAULT_LOCALE;
   const norm = lang.toLowerCase();
   if (norm.startsWith("it")) return "it";
   return "en";
 }
 
 export function I18nProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocaleState] = React.useState<Locale>(() => {
-    if (typeof window === "undefined") return detectSystemLocale();
+  // 1) Durante SSR/first render: fisso a "it"
+  const [locale, setLocaleState] = React.useState<Locale>(DEFAULT_LOCALE);
+  const [ready, setReady] = React.useState(false);
+
+  // 2) Dopo mount client: carica da localStorage o sistema e sblocca
+  React.useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY) as Locale | null;
-    if (saved === "it" || saved === "en") return saved;
-    return detectSystemLocale();
-  });
+    const next = saved === "it" || saved === "en" ? saved : detectSystemLocale();
+    setLocaleState(next);
+    setReady(true);
+  }, []);
 
   const setLocale = React.useCallback((l: Locale) => {
     setLocaleState(l);
@@ -159,18 +168,21 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const t = React.useCallback(
-    (key: string) => MESSAGES[locale][key] ?? key,
-    [locale]
+    (key: string) => {
+      // Prima che sia pronto, usa sempre la mappa "it" per evitare mismatch
+      const loc = ready ? locale : DEFAULT_LOCALE;
+      return MESSAGES[loc][key] ?? key;
+    },
+    [locale, ready]
   );
 
-  // Aggiorna lang sull'html per accessibilità
   React.useEffect(() => {
     if (typeof document !== "undefined") {
-      document.documentElement.lang = locale === "it" ? "it" : "en";
+      document.documentElement.lang = (ready ? locale : DEFAULT_LOCALE) === "it" ? "it" : "en";
     }
-  }, [locale]);
+  }, [locale, ready]);
 
-  const value = React.useMemo(() => ({ locale, t, setLocale }), [locale, t, setLocale]);
+  const value = React.useMemo(() => ({ locale, t, setLocale, ready }), [locale, t, setLocale, ready]);
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
