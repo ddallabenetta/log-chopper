@@ -34,7 +34,6 @@ const LEVEL_OPTIONS: Array<{ label: string; value: FilterConfig["level"] }> = [
   { label: "Altro", value: "OTHER" },
 ];
 
-// piccola hook debounce
 function useDebouncedValue<T>(value: T, delay = 200) {
   const [debounced, setDebounced] = React.useState(value);
   React.useEffect(() => {
@@ -59,11 +58,9 @@ export default function LogControls({
 }: Props) {
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
-  // stato locale per la query + debounce
   const [localQuery, setLocalQuery] = React.useState(filter.query);
   const debouncedQuery = useDebouncedValue(localQuery, 200);
 
-  // sincronizza verso l'alto quando cambia il debounced
   React.useEffect(() => {
     if (debouncedQuery !== filter.query) {
       onFilterChange({ ...filter, query: debouncedQuery });
@@ -71,7 +68,6 @@ export default function LogControls({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedQuery]);
 
-  // allinea in caso filter.query venga cambiata esternamente (clear, ecc.)
   React.useEffect(() => {
     setLocalQuery(filter.query);
   }, [filter.query]);
@@ -88,13 +84,14 @@ export default function LogControls({
     onFilterChange({ ...filter, mode });
   };
 
-  // Deduplica e ordina i pinned per leggibilità, e filtra eventuali id vuoti
+  // Dedup rigoroso: normalizza (trim), filtra falsy e crea Set; poi ordina
   const uniquePinned = React.useMemo(() => {
     const s = new Set<string>();
-    for (const id of pinnedIds) {
-      if (id && !s.has(id)) s.add(id);
+    for (const raw of pinnedIds) {
+      const id = typeof raw === "string" ? raw.trim() : "";
+      if (id) s.add(id);
     }
-    return Array.from(s);
+    return Array.from(s).sort();
   }, [pinnedIds]);
 
   return (
