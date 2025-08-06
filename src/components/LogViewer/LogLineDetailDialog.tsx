@@ -9,6 +9,7 @@ import { Copy, Maximize2, Minimize2 } from "lucide-react";
 import { toast } from "sonner";
 import type { LogLine } from "./LogTypes";
 import JsonGraphViewer from "./JsonGraphViewer";
+import JsonPrettyViewer from "./JsonPrettyViewer";
 
 type Props = {
   open: boolean;
@@ -102,7 +103,7 @@ function levelDotClass(level: LogLine["level"]) {
 }
 
 export default function LogLineDetailDialog({ open, onOpenChange, line }: Props) {
-  const [view, setView] = React.useState<"text" | "graph">("text");
+  const [view, setView] = React.useState<"text" | "pretty" | "graph">("text");
   const [fullscreen, setFullscreen] = React.useState(false);
 
   React.useEffect(() => {
@@ -147,7 +148,7 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
 
             <div className="flex items-center justify-between">
               <div className="text-sm font-medium">
-                {hasJson ? "Contenuto (JSON rilevato)" : "Contenuto"}
+                {hasJson ? (view === "pretty" ? "Contenuto (JSON colorato)" : view === "graph" ? "Contenuto (grafico)" : "Contenuto") : "Contenuto"}
               </div>
               <div className="flex items-center gap-2">
                 {hasJson && (
@@ -157,6 +158,13 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
                       onClick={() => setView("text")}
                     >
                       Testo
+                    </button>
+                    <button
+                      className={`px-2 py-1 text-xs rounded ${view === "pretty" ? "bg-secondary" : ""}`}
+                      onClick={() => setView("pretty")}
+                      title="JSON con colori e collapse"
+                    >
+                      Pretty
                     </button>
                     <button
                       className={`px-2 py-1 text-xs rounded ${view === "graph" ? "bg-secondary" : ""}`}
@@ -221,6 +229,16 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
                   </div>
                 )}
               </>
+            )}
+
+            {hasJson && view === "pretty" && (
+              <div className={fullscreen ? "flex-1 min-h-0" : ""}>
+                <JsonPrettyViewer
+                  data={(extraction as any).parsed}
+                  className={fullscreen ? "h-full" : "max-h-[60vh]"}
+                  initiallyCollapsed={false}
+                />
+              </div>
             )}
 
             {hasJson && view === "graph" && (
