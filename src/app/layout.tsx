@@ -59,11 +59,25 @@ export default function RootLayout({
         <ThemeProvider>
           <RegisterSW />
           <header className="w-full border-b bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-            <div className="w-full px-4 py-3 flex items-center justify-between">
-              <h1 className="text-base sm:text-lg md:text-xl font-semibold flex items-center gap-2">
-                <span role="img" aria-label="tronco">🪵</span>
-                Log Chopper
-              </h1>
+            <div className="w-full px-4 py-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <h1 className="text-base sm:text-lg md:text-xl font-semibold flex items-center gap-2 truncate">
+                  <span role="img" aria-label="tronco">🪵</span>
+                  <span className="truncate">Log Chopper</span>
+                </h1>
+                <span className="hidden sm:inline text-xs text-muted-foreground">
+                  •
+                </span>
+                <a
+                  href="https://github.com/ddallabenetta"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                  title="Vai al profilo GitHub"
+                >
+                  Made with 🤖 by @ddallabenetta
+                </a>
+              </div>
               <div className="flex items-center gap-2">
                 <PWAInstaller />
                 <ThemeToggle />
