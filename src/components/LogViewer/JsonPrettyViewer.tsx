@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useI18n } from "@/components/i18n/I18nProvider";
 
 export type JsonPrettyViewerHandle = {
   getFormattedJson: () => string;
@@ -213,6 +214,7 @@ const JsonPrettyViewer = React.forwardRef<JsonPrettyViewerHandle, Props>(functio
   { data, className, initiallyCollapsed = false, indent = 12 }: Props,
   ref
 ) {
+  const { t } = useI18n();
   const [query, setQuery] = React.useState("");
   const debounced = useDebounced(query, 200);
   const formatted = React.useMemo(() => {
@@ -232,7 +234,7 @@ const JsonPrettyViewer = React.forwardRef<JsonPrettyViewerHandle, Props>(functio
       <div className="flex items-center gap-2">
         <input
           type="text"
-          placeholder="Cerca in chiavi e valori…"
+          placeholder={t("filter_text_placeholder")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
@@ -241,9 +243,9 @@ const JsonPrettyViewer = React.forwardRef<JsonPrettyViewerHandle, Props>(functio
           <button
             className="h-8 px-2 rounded-md border text-xs"
             onClick={() => setQuery("")}
-            title="Pulisci ricerca"
+            title={t("clear")}
           >
-            Pulisci
+            {t("clear")}
           </button>
         )}
       </div>

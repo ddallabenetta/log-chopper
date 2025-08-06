@@ -5,7 +5,7 @@ import { SonnerToaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import PWAInstaller from "@/components/PWAInstaller";
-import { I18nProvider } from "@/components/i18n/I18nProvider";
+import { I18nProvider, useI18n } from "@/components/i18n/I18nProvider";
 import LanguageSelect from "@/components/LanguageSelect";
 
 const geistSans = Geist({
@@ -35,12 +35,42 @@ export const metadata: Metadata = {
 function RegisterSW() {
   if (typeof window === "undefined") return null;
   if ("serviceWorker" in navigator) {
-    // defer registration to after page becomes interactive
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
     });
   }
   return null;
+}
+
+function Header() {
+  const { t } = useI18n();
+  return (
+    <header className="w-full border-b bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+      <div className="w-full px-4 py-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <h1 className="text-base sm:text-lg md:text-xl font-semibold flex items-center gap-2 truncate">
+            <span role="img" aria-label="tronco">🪵</span>
+            <span className="truncate">{t("app_title")}</span>
+          </h1>
+          <span className="hidden sm:inline text-xs text-muted-foreground">•</span>
+          <a
+            href="https://github.com/ddallabenetta/log-chopper"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
+            title={t("github_title")}
+          >
+            {t("made_with")}
+          </a>
+        </div>
+        <div className="flex items-center gap-2">
+          <LanguageSelect />
+          <PWAInstaller />
+          <ThemeToggle />
+        </div>
+      </div>
+    </header>
+  );
 }
 
 export default function RootLayout({
@@ -55,40 +85,12 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
       </head>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased h-full min-h-0 flex flex-col`}
-      >
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased h-full min-h-0 flex flex-col`}>
         <I18nProvider>
           <ThemeProvider>
             <RegisterSW />
-            <header className="w-full border-b bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-              <div className="w-full px-4 py-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <h1 className="text-base sm:text-lg md:text-xl font-semibold flex items-center gap-2 truncate">
-                    <span role="img" aria-label="tronco">🪵</span>
-                    <span className="truncate">Log Chopper</span>
-                  </h1>
-                  <span className="hidden sm:inline text-xs text-muted-foreground">
-                    •
-                  </span>
-                  <a
-                    href="https://github.com/ddallabenetta/log-chopper"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
-                    title="Vai al repository GitHub"
-                  >
-                    Made with 🤖 by @ddallabenetta
-                  </a>
-                </div>
-                <div className="flex items-center gap-2">
-                  <LanguageSelect />
-                  <PWAInstaller />
-                  <ThemeToggle />
-                </div>
-              </div>
-            </header>
-            <div className="flex-1 min-h-0 flex flex-col">
+            <Header />
+            <div className="flex-1 min_h-0 flex flex-col">
               {children}
             </div>
             <SonnerToaster />

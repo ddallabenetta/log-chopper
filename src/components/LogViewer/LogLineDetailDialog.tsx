@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import type { LogLine } from "./LogTypes";
 import JsonGraphViewer from "./JsonGraphViewer";
 import JsonPrettyViewer, { JsonPrettyViewerHandle } from "./JsonPrettyViewer";
+import { useI18n } from "@/components/i18n/I18nProvider";
 
 type Props = {
   open: boolean;
@@ -103,6 +104,7 @@ function levelDotClass(level: LogLine["level"]) {
 }
 
 export default function LogLineDetailDialog({ open, onOpenChange, line }: Props) {
+  const { t } = useI18n();
   const [view, setView] = React.useState<"text" | "pretty" | "graph">("text");
   const [fullscreen, setFullscreen] = React.useState(false);
   const prettyRef = React.useRef<JsonPrettyViewerHandle | null>(null);
@@ -124,12 +126,12 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
       const jsonStr = prettyRef.current?.getFormattedJson?.() || (extraction as any).formatted || "";
       if (jsonStr) {
         await navigator.clipboard.writeText(jsonStr);
-        toast.success("JSON copiato");
+        toast.success(t("copy_json"));
         return;
       }
     }
     await navigator.clipboard.writeText(line.content);
-    toast.success("Contenuto copiato");
+    toast.success(t("copy"));
   };
 
   const hasJson = extraction.kind !== "none";
@@ -157,7 +159,13 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
 
             <div className="flex items-center justify-between">
               <div className="text-sm font-medium">
-                {hasJson ? (view === "pretty" ? "Contenuto (JSON colorato)" : view === "graph" ? "Contenuto (grafico)" : "Contenuto") : "Contenuto"}
+                {hasJson
+                  ? view === "pretty"
+                    ? t("content_pretty")
+                    : view === "graph"
+                      ? t("content_graph")
+                      : t("content")
+                  : t("content")}
               </div>
               <div className="flex items-center gap-2">
                 {hasJson && (
@@ -166,12 +174,12 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
                       className={`px-2 py-1 text-xs rounded ${view === "text" ? "bg-secondary" : ""}`}
                       onClick={() => setView("text")}
                     >
-                      Testo
+                      {t("content")}
                     </button>
                     <button
                       className={`px-2 py-1 text-xs rounded ${view === "pretty" ? "bg-secondary" : ""}`}
                       onClick={() => setView("pretty")}
-                      title="JSON con colori e collapse"
+                      title={t("content_pretty")}
                     >
                       Pretty
                     </button>
@@ -188,14 +196,14 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
                   variant="outline"
                   onClick={() => setFullscreen((v) => !v)}
                   className="gap-2"
-                  title={fullscreen ? "Esci da schermo intero" : "Schermo intero"}
+                  title={fullscreen ? t("exit_fullscreen") : t("fullscreen")}
                 >
                   {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-                  {fullscreen ? "Riduci" : "Schermo intero"}
+                  {fullscreen ? t("exit_fullscreen") : t("fullscreen")}
                 </Button>
                 <Button size="sm" variant="outline" onClick={copyToClipboard} className="gap-2">
                   <Copy className="h-4 w-4" />
-                  {view === "pretty" && hasJson ? "Copia JSON" : "Copia"}
+                  {view === "pretty" && hasJson ? t("copy_json") : t("copy")}
                 </Button>
               </div>
             </div>
