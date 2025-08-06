@@ -5,6 +5,7 @@ import { SonnerToaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { I18nProvider } from "@/components/i18n/I18nProvider";
 import Header from "@/components/Header";
+import { Analytics } from "@vercel/analytics/react";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -61,6 +62,7 @@ export default function RootLayout({
               {children}
             </div>
             <SonnerToaster />
+            <Analytics />
           </ThemeProvider>
         </I18nProvider>
       </body>
