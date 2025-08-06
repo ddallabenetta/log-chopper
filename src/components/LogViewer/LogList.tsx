@@ -17,6 +17,7 @@ type Props = {
 
 const MemoLineItem = React.memo(LogLineItem);
 
+// Matcher
 function buildMatcher(filter: FilterConfig): ((text: string) => { match: boolean; ranges: { start: number; end: number }[] }) {
   if (!filter.query) return () => ({ match: true, ranges: [] });
   if (filter.mode === "regex") {
@@ -72,6 +73,48 @@ function useRafThrottle<T extends (...args: any[]) => void>(fn: T) {
   return throttled as T;
 }
 
+// Componente riga con misurazione dell’altezza
+function MeasuredRow({
+  line,
+  isPinned,
+  onTogglePin,
+  highlightRanges,
+  onHeightChange,
+  zebraClass,
+}: {
+  line: LogLine;
+  isPinned: boolean;
+  onTogglePin: (id: string) => void;
+  highlightRanges: { start: number; end: number }[];
+  onHeightChange: (id: string, h: number) => void;
+  zebraClass: string;
+}) {
+  const ref = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      onHeightChange(line.id, el.getBoundingClientRect().height);
+    });
+    ro.observe(el);
+    // prima misura
+    onHeightChange(line.id, el.getBoundingClientRect().height);
+    return () => ro.disconnect();
+  }, [line.id, onHeightChange]);
+
+  return (
+    <div ref={ref} data-row-id={line.id} className={zebraClass}>
+      <MemoLineItem
+        line={line}
+        isPinned={isPinned}
+        onTogglePin={onTogglePin}
+        highlightRanges={highlightRanges}
+      />
+    </div>
+  );
+}
+
 export default function LogList({
   lines,
   pinned,
@@ -83,15 +126,6 @@ export default function LogList({
   onAfterJump,
 }: Props) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
-
-  const [expandedMap, setExpandedMap] = React.useState<Map<string, boolean>>(() => new Map());
-  const toggleExpanded = React.useCallback((id: string) => {
-    setExpandedMap((prev) => {
-      const next = new Map(prev);
-      next.set(id, !next.get(id));
-      return next;
-    });
-  }, []);
 
   const matcher = React.useMemo(() => buildMatcher(filter), [filter]);
   const passesLevel = React.useCallback(
@@ -108,8 +142,22 @@ export default function LogList({
     });
   }, [lines, matcher, pinned, showOnlyPinned, passesLevel]);
 
-  const ROW_H = 34;
-  const OVERSCAN = 12;
+  // Virtual scroll con altezze variabili
+  const ESTIMATE = 34; // stima iniziale
+  const OVERSCAN = 8;
+
+  // Mappa id -> altezza misurata
+  const [heights, setHeights] = React.useState<Map<string, number>>(() => new Map());
+
+  const setHeight = React.useCallback((id: string, h: number) => {
+    setHeights((prev) => {
+      const old = prev.get(id);
+      if (old === h) return prev;
+      const next = new Map(prev);
+      next.set(id, h);
+      return next;
+    });
+  }, []);
 
   const [scrollTop, setScrollTop] = React.useState(0);
   const [viewportH, setViewportH] = React.useState(0);
@@ -213,13 +261,49 @@ export default function LogList({
     };
   }, []);
 
+  // Calcolo finestra visibile con altezze variabili
   const total = filtered.length;
-  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
-  const visibleCount = Math.max(0, Math.ceil((viewportH || 1) / ROW_H) + OVERSCAN * 2);
-  const endIndex = Math.min(total, startIndex + visibleCount);
 
-  const topPad = startIndex * ROW_H;
-  const bottomPad = Math.max(0, (total - endIndex) * ROW_H);
+  // prefixHeights[i] = somma altezze 0..i-1
+  const prefixHeights = React.useMemo(() => {
+    const arr = new Array<number>(total + 1);
+    arr[0] = 0;
+    for (let i = 0; i < total; i++) {
+      const id = filtered[i]?.id;
+      const h = id ? heights.get(id) ?? ESTIMATE : ESTIMATE;
+      arr[i + 1] = arr[i] + h;
+    }
+    return arr;
+  }, [filtered, heights, total]);
+
+  const totalHeight = prefixHeights[total];
+
+  // Trova startIndex via ricerca binaria sul prefixHeights rispetto a scrollTop
+  const findIndexForOffset = (offset: number) => {
+    let lo = 0, hi = total;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (prefixHeights[mid] <= offset) lo = mid + 1;
+      else hi = mid;
+    }
+    return Math.max(0, lo - 1);
+  };
+
+  const startIndex = Math.max(0, findIndexForOffset(scrollTop) - OVERSCAN);
+
+  // Calcola quanti item entrano nel viewport
+  let y = prefixHeights[startIndex];
+  let i = startIndex;
+  while (i < total && y < scrollTop + viewportH) {
+    const id = filtered[i].id;
+    const h = heights.get(id) ?? ESTIMATE;
+    y += h;
+    i++;
+  }
+  const endIndex = Math.min(total, i + OVERSCAN);
+
+  const topPad = prefixHeights[startIndex];
+  const bottomPad = totalHeight - prefixHeights[endIndex];
 
   const slice = React.useMemo(() => filtered.slice(startIndex, endIndex), [filtered, startIndex, endIndex]);
   const lastId = slice.length > 0 ? slice[slice.length - 1]?.id : null;
@@ -245,37 +329,20 @@ export default function LogList({
         {filtered.length === 0 ? (
           <div className="p-6 text-sm text-muted-foreground">Nessun risultato.</div>
         ) : (
-          <div>
+          <div style={{ height: totalHeight || ESTIMATE }}>
             {topPad > 0 && <div style={{ height: topPad }} />}
-            {slice.map((line, i) => {
+            {slice.map((line, idx) => {
               const isLast = lastId === line.id;
-              const expanded = expandedMap.get(line.id) === true;
-              const zebra = (startIndex + i) % 2 === 0 ? "bg-background" : "bg-accent/30";
+              const zebra = (startIndex + idx) % 2 === 0 ? "bg-background" : "bg-accent/30";
               return (
-                <div
-                  key={line.id}
-                  data-row-id={line.id}
-                  id={isLast ? "log-last-row" : undefined}
-                  className={zebra}
-                  style={{ minHeight: expanded ? undefined : ROW_H }}
-                  onClick={(e) => {
-                    // evita che click su bottoni azione espandano/comprimano
-                    const target = e.target as HTMLElement;
-                    if (target.closest("button")) return;
-                    toggleExpanded(line.id);
-                  }}
-                >
-                  <MemoLineItem
+                <div key={line.id} id={isLast ? "log-last-row" : undefined}>
+                  <MeasuredRow
                     line={line}
                     isPinned={pinned.has(line.id)}
-                    onTogglePin={(id) => {
-                      // fermiamo la propagazione per non innescare il toggle di riga
-                      // (in LogLineItem i bottoni già fanno stopPropagation; doppia sicurezza)
-                      onTogglePin(id);
-                    }}
+                    onTogglePin={onTogglePin}
                     highlightRanges={sliceHighlightMap.get(line.id) ?? []}
-                    expanded={expanded}
-                    onToggleExpanded={toggleExpanded}
+                    onHeightChange={setHeight}
+                    zebraClass={zebra}
                   />
                 </div>
               );

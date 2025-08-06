@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Pin, PinOff, Info, ChevronDown, ChevronRight } from "lucide-react";
+import { Pin, PinOff, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { LogLine } from "./LogTypes";
 import LogLineDetailDialog from "./LogLineDetailDialog";
@@ -11,8 +11,6 @@ type Props = {
   isPinned: boolean;
   onTogglePin: (id: string) => void;
   highlightRanges: Array<{ start: number; end: number }>;
-  expanded?: boolean;
-  onToggleExpanded?: (id: string) => void;
 };
 
 function levelDotClass(level: LogLine["level"]) {
@@ -37,8 +35,6 @@ export default function LogLineItem({
   isPinned,
   onTogglePin,
   highlightRanges,
-  expanded = false,
-  onToggleExpanded,
 }: Props) {
   const [detailOpen, setDetailOpen] = React.useState(false);
 
@@ -68,21 +64,11 @@ export default function LogLineItem({
 
   return (
     <>
-      <div className={["px-3 cursor-pointer select-none", expanded ? "py-2" : "py-1.5"].join(" ")}>
-        <div className={["flex items-start gap-3", expanded ? "" : "items-center"].join(" ")}>
-          {/* Meta + Toggle espansione */}
+      <div className="px-3 py-1.5">
+        <div className="flex items-start gap-3">
+          {/* Meta */}
           <div className="shrink-0 basis-56 max-w-[50%] text-xs text-muted-foreground tabular-nums font-mono overflow-hidden text-ellipsis">
             <div className="flex items-center gap-2">
-              <button
-                className="h-5 w-5 grid place-items-center rounded hover:bg-accent/60"
-                title={expanded ? "Comprimi" : "Espandi"}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleExpanded?.(line.id);
-                }}
-              >
-                {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-              </button>
               <span className={`inline-block h-2.5 w-2.5 rounded-full ${levelDotClass(line.level)}`} aria-hidden />
               <span className="text-foreground/80">{line.lineNumber}</span>
               <span className="text-muted-foreground">•</span>
@@ -92,14 +78,10 @@ export default function LogLineItem({
             </div>
           </div>
 
-          {/* Contenuto */}
+          {/* Contenuto sempre visibile (multilinea) */}
           <div
-            className={[
-              "flex-1 min-w-0 text-sm",
-              expanded ? "whitespace-pre-wrap break-words" : "whitespace-nowrap overflow-hidden text-ellipsis"
-            ].join(" ")}
+            className="flex-1 min-w-0 text-sm whitespace-pre-wrap break-words"
             aria-label={`log-${line.id}`}
-            onClick={() => onToggleExpanded?.(line.id)}
           >
             {renderHighlighted(line.content)}
           </div>
