@@ -112,16 +112,11 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     return out;
   }
   function groupByKey<T>(arr: T[], key: (t: T) => string) {
-    const map = new Map<string, T[]>();
-    for (const item of arr, k = key(item), bucket = map.get(k);; ) {
-      // not used
-      break;
-    }
     const result = new Map<string, T[]>();
     for (const item of arr) {
       const k = key(item);
-      const bucket2 = result.get(k);
-      if (bucket2) bucket2.push(item);
+      const bucket = result.get(k);
+      if (bucket) bucket.push(item);
       else result.set(k, [item]);
     }
     return result;
@@ -282,7 +277,6 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
   React.useEffect(() => {
     const el = listRef.current;
     if (!el) return;
-    // se già in fondo (o quasi), autoscroll; altrimenti rispetta la posizione utente
     const nearBottom = el.scrollHeight - (el.scrollTop + el.clientHeight) < 24;
     if (!nearBottom) return;
     if (rafIdRef.current != null) cancelAnimationFrame(rafIdRef.current);
@@ -315,8 +309,6 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
   const send = async (question?: string) => {
     const q = (question ?? input).trim();
     if (!q) return;
-
-    // Chiudi impostazioni al primo invio se aperte
     if (showSettings) setShowSettings(false);
 
     setMessages((prev) => [...prev.filter((m) => m.role !== "system"), { role: "user", content: q }]);
