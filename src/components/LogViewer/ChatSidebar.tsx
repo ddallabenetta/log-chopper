@@ -31,44 +31,6 @@ Guidelines:
 - If ambiguity exists, list hypotheses and what evidence would confirm/deny them.
 Output in Italian. Use bullet points and be concise.`;
 
-const PROVIDOttimo, rendiamo il pulsante di riapertura unico e più curato visivamente: sarà un FAB circolare, più grande, con colore primario, icona centrata, ombra morbida e animazioni di hover/focus. Compare solo quando la sidebar è chiusa.
-
-Ecco l’aggiornamento al componente della sidebar.
-
-<dyad-write path="src/components/LogViewer/ChatSidebar.tsx" description="Refine the single floating reopen button: primary-colored circular FAB with better sizing, shadow and hover/focus feedback, shown only when closed.">
-"use client";
-
-import * as React from "react";
-import { Card } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
-import ChatHeader from "./components/ChatHeader";
-import ChatSettings, { type CompressionConfig } from "./components/ChatSettings";
-import ChatMessages from "./components/ChatMessages";
-import type { LogLine, FilterConfig } from "./LogTypes";
-import { PanelRightOpen } from "lucide-react";
-
-type Provider = "openai" | "deepseek" | "openrouter" | "ollama";
-type Message = { role: "system" | "user" | "assistant"; content: string };
-
-type Props = {
-  lines: LogLine[];
-  pinnedIds: string[];
-  filter: FilterConfig;
-  className?: string;
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
-};
-
-const DEFAULT_SYSTEM_PROMPT = `You are an expert log analyst.
-Goal: find probable errors, warnings, anomalies, and root causes within provided application logs.
-Prioritize lines marked as "pinned" by the user; treat them as high-signal clues.
-Guidelines:
-- Identify error patterns, stack traces, repeated warnings, time correlations.
-- Explain concisely the likely root cause and impacted components.
-- Propose next steps or checks (config, network, dependency versions).
-- If ambiguity exists, list hypotheses and what evidence would confirm/deny them.
-Output in Italian. Use bullet points and be concise.`;
-
 const PROVIDER_MODELS: Record<Exclude<Provider, "ollama">, { label: string; models: { id: string; label: string }[] }> = {
   openai: { label: "OpenAI", models: [{ id: "gpt-4o-mini", label: "gpt-4o-mini" }, { id: "gpt-4.1-mini", label: "gpt-4.1-mini" }] },
   deepseek: { label: "DeepSeek", models: [{ id: "deepseek-chat", label: "deepseek-chat" }, { id: "deepseek-reasoner", label: "deepseek-reasoner" }] },
@@ -84,7 +46,7 @@ const PROVIDER_MODELS: Record<Exclude<Provider, "ollama">, { label: string; mode
 };
 
 export default function ChatSidebar({ lines, pinnedIds, className, open: openProp, onOpenChange, filter }: Props) {
-  // Stato apertura controllato/auto
+  // Controlled/uncontrolled
   const [openUncontrolled, setOpenUncontrolled] = React.useState(true);
   const open = openProp ?? openUncontrolled;
   const setOpen = (v: boolean) => {
@@ -122,7 +84,7 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     } catch {}
   }, [showSettings]);
 
-  // Compressione
+  // Compression
   const DEFAULT_COMPRESSION: CompressionConfig = {
     maxPinned: 120,
     maxOthers: 180,
