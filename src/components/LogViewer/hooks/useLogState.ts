@@ -1,4 +1,3 @@
-50MB, altrimenti IndexedDB. Mantiene API esistenti.">
 "use client";
 
 import * as React from "react";
@@ -129,12 +128,9 @@ export function useLogState() {
         newStats.push({ fileName: f.name, totalLines: total, droppedLines: 0 });
       } else {
         // SMALL provider (IndexedDB) – usiamo la pipeline esistente di Log Chopper
-        // Per compatibilità, riutilizziamo la UI: qui istanziamo il provider IDB e deleghiamo a paginazione esistente.
         provider = await createIdbProvider(f.name);
         providersRef.current.set(f.name, provider);
 
-        // Per i file piccoli, abbiamo già un percorso IDB attivo in app (già popolato in precedenza dall'utente).
-        // Qui non ricarichiamo tutto: mostriamo semplicemente la coda.
         const total = await provider.totalLines();
         setFiles((prev) => upsertFile(prev, { fileName: f.name, lines: [], totalLines: total }));
         const tail = await provider.tail(Math.min(pageSize, total));
