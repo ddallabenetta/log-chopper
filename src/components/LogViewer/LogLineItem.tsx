@@ -64,7 +64,7 @@ export default function LogLineItem({
 
   return (
     <>
-      <div className="flex items-start gap-3 px-3 py-1.5 hover:bg-accent/50 rounded">
+      <div className="flex items-center gap-3 px-3 py-1.5 hover:bg-accent/50 rounded h-[34px]">
         <div
           className="shrink-0 basis-56 max-w-[50%] text-xs text-muted-foreground tabular-nums font-mono overflow-hidden text-ellipsis whitespace-nowrap flex items-center gap-2"
           title={`${line.fileName}:${line.lineNumber}`}
@@ -75,7 +75,7 @@ export default function LogLineItem({
           <span className="truncate">{line.fileName}:{line.lineNumber}</span>
         </div>
 
-        <div className="flex-1 min-w-0 text-sm whitespace-pre-wrap break-words" aria-label={`log-${line.id}`}>
+        <div className="flex-1 min-w-0 text-sm whitespace-nowrap overflow-hidden text-ellipsis" aria-label={`log-${line.id}`}>
           {renderHighlighted(line.content)}
         </div>
 

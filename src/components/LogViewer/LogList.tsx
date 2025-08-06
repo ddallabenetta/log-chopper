@@ -99,20 +99,17 @@ export default function LogList({
     });
   }, [lines, matcher, pinned, showOnlyPinned, passesLevel]);
 
-  const ROW_H = 34;
+  const ROW_H = 34; // fissa e coerente con l'item
   const OVERSCAN = 12;
 
   const [scrollTop, setScrollTop] = React.useState(0);
   const [viewportH, setViewportH] = React.useState(0);
-
-  // Stato "follow bottom": se true, quando arrivano nuove righe restiamo agganciati al fondo.
   const [followBottom, setFollowBottom] = React.useState(true);
 
   const handleScroll = useRafThrottle(() => {
     const el = containerRef.current;
     if (!el) return;
     setScrollTop(el.scrollTop);
-    // aggiorna followBottom con soglia stretta (24px dal fondo)
     const atBottom = el.scrollHeight - (el.scrollTop + el.clientHeight) <= 24;
     setFollowBottom(atBottom);
   });
@@ -135,7 +132,6 @@ export default function LogList({
     };
   }, [handleScroll, handleResize]);
 
-  // Primo popolamento: vai in fondo una volta
   const didInitScrollBottomRef = React.useRef(false);
   React.useEffect(() => {
     const el = containerRef.current;
@@ -149,7 +145,6 @@ export default function LogList({
     }
   }, [filtered.length]);
 
-  // Se arrivano nuove righe e siamo agganciati al fondo, rimani in fondo
   const prevLenRef = React.useRef(0);
   React.useEffect(() => {
     const el = containerRef.current;
@@ -162,7 +157,6 @@ export default function LogList({
     prevLenRef.current = filtered.length;
   }, [filtered.length, followBottom]);
 
-  // Load more top con guard re-entrancy
   const loadingTopRef = React.useRef(false);
   React.useEffect(() => {
     const el = containerRef.current;
@@ -172,7 +166,6 @@ export default function LogList({
       if (el.scrollTop <= 40) {
         loadingTopRef.current = true;
         Promise.resolve(onLoadMoreTop()).finally(() => {
-          // lascia un frame per stabilizzare l'altezza
           requestAnimationFrame(() => {
             loadingTopRef.current = false;
           });
@@ -183,7 +176,6 @@ export default function LogList({
     return () => el.removeEventListener("scroll", onScrollTop);
   }, [onLoadMoreTop]);
 
-  // Jump a ID
   React.useEffect(() => {
     if (!jumpToId) return;
     const el = containerRef.current;
@@ -197,12 +189,22 @@ export default function LogList({
     onAfterJump && onAfterJump();
   }, [jumpToId, onAfterJump]);
 
-  // Espone per “Vai in fondo”
+  // Espone metodi globali affidabili per scroll-to-bottom
   React.useEffect(() => {
     (window as any).__LOG_LIST_CONTAINER__ = containerRef.current;
+    (window as any).__LOG_LIST_SCROLL_TO_BOTTOM__ = () => {
+      const el = containerRef.current;
+      if (!el) return;
+      const sentinel = el.querySelector("#log-bottom-sentinel") as HTMLElement | null;
+      if (sentinel) {
+        el.scrollTo({ top: sentinel.offsetTop - (el.clientHeight - sentinel.clientHeight), behavior: "smooth" });
+      } else {
+        el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      }
+      setFollowBottom(true);
+    };
   }, []);
 
-  // Virtual window
   const total = filtered.length;
   const startIndex = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
   const visibleCount = Math.max(0, Math.ceil((viewportH || 1) / ROW_H) + OVERSCAN * 2);
@@ -230,7 +232,7 @@ export default function LogList({
       <div
         ref={containerRef}
         className="flex-1 min-h-0 overflow-auto"
-        style={{ contain: "content" }}
+        style={{ contain: "content", willChange: "transform" }}
       >
         {filtered.length === 0 ? (
           <div className="p-6 text-sm text-muted-foreground">Nessun risultato.</div>
@@ -245,7 +247,7 @@ export default function LogList({
                   data-row-id={line.id}
                   id={isLast ? "log-last-row" : undefined}
                   className="bg-transparent"
-                  style={{ minHeight: ROW_H }}
+                  style={{ minHeight: ROW_H, height: ROW_H }}
                 >
                   <MemoLineItem
                     line={line}
@@ -257,6 +259,7 @@ export default function LogList({
               );
             })}
             {bottomPad > 0 && <div style={{ height: bottomPad }} />}
+            <div id="log-bottom-sentinel" style={{ height: 1 }} />
           </div>
         )}
       </div>
