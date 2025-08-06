@@ -112,11 +112,7 @@ export function useLogState() {
     const wasOnNewTab = selectedTab !== ALL_TAB_ID && selectedTab.startsWith("Nuova-");
 
     const newStats: FileIngestStats[] = [];
-    const importedNames: string[] = [];
-
-    for (const f of arr) {
-      importedNames.push(f.name);
-
+    the_loop: for (const f of arr) {
       if (f.size > LARGE_FILE_THRESHOLD) {
         const provider = await createLargeProvider(f);
         providersRef.current.set(f.name, provider);
@@ -170,12 +166,11 @@ export function useLogState() {
     setIngestStats(newStats);
     setIngesting(false);
 
-    if (wasOnNewTab) {
-      setFiles((prev) => prev.filter((f) => f.fileName !== selectedTab));
+    // porta l’utente sull’ultima tab importata
+    if (arr.length > 0) {
+      const lastName = arr[arr.length - 1]!.name;
+      setSelectedTab(lastName);
     }
-
-    const lastImported = importedNames[importedNames.length - 1];
-    if (lastImported) setSelectedTab(lastImported);
 
     toast.success(`${arr.length} file caricati`);
     queueMicrotask(() => (window as any).__LOG_LIST_SCROLL_TO_BOTTOM__?.());
@@ -273,7 +268,6 @@ export function useLogState() {
         return dedupeById([...others, ...older, ...currentPrev]);
       });
 
-      // Mantieni l'ancora visiva evitando “salti”
       requestAnimationFrame(() => {
         const el2: HTMLElement | null = (window as any).__LOG_LIST_CONTAINER__;
         if (!el2) return;
@@ -339,7 +333,7 @@ export function useLogState() {
     setPendingJumpId(`${selectedTab}:${target}`);
   }
 
-  // Nuovi helper: vai all’inizio / vai alla fine assoluti del file
+  // Fix: jumpToStart forza sempre il caricamento [1..pageSize] e il focus su riga 1
   async function jumpToStart() {
     if (selectedTab === ALL_TAB_ID) return;
     const prov = providersRef.current.get(selectedTab);
@@ -350,10 +344,13 @@ export function useLogState() {
     const to = Math.min(total, pageSize);
     const rows = await prov.range(from, to);
     if (!rows.length) return;
+
     setAllLines((prev) => {
       const others = prev.filter((l) => l.fileName !== selectedTab);
       return dedupeById([...others, ...rows]);
     });
+
+    // Imposta sempre il jumpId alla riga 1 anche se era già presente, per forzare lo scroll
     setPendingJumpId(`${selectedTab}:1`);
   }
 
@@ -376,7 +373,6 @@ export function useLogState() {
 
   const onJumpToId = (id: string) => setPendingJumpId(id);
 
-  // Ricarica tail alla selezione tab
   React.useEffect(() => {
     (async () => {
       const tab = selectedTab;
@@ -400,7 +396,6 @@ export function useLogState() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTab, pageSize]);
 
-  // Scansione progressiva deterministica durante ricerca/filtri attivi
   const scanRunIdRef = React.useRef<number>(0);
   React.useEffect(() => {
     const hasActiveFilter =
@@ -422,14 +417,12 @@ export function useLogState() {
       const total = await prov.totalLines();
       if (total <= 0) return;
 
-      // Punto di partenza: finestra corrente
       const current = allLines.filter((l) => l.fileName === selectedTab);
       let minLoaded = current.length ? current[0].lineNumber : Math.max(1, total - pageSize + 1);
       let maxLoaded = current.length ? current[current.length - 1].lineNumber : total;
 
       const BLOCK = Math.max(8000, Math.min(pageSize, 32000));
 
-      // espandi verso l’alto poi verso il basso alternando, finché copri tutto
       let dirUp = true;
       while (!cancelled && runId === scanRunIdRef.current && (minLoaded > 1 || maxLoaded < total)) {
         if (dirUp && minLoaded > 1) {
@@ -438,29 +431,25 @@ export function useLogState() {
           if (to >= from) {
             const chunk = await prov.range(from, to);
             if (cancelled || runId !== scanRunIdRef.current) return;
-            if (chunk.length) {
-              const el: HTMLElement | null = (window as any).__LOG_LIST_CONTAINER__;
-              const prevHeight = el ? el.scrollHeight : 0;
 
-              setAllLines((prev) => {
-                const others = prev.filter((l) => l.fileName !== selectedTab);
-                const cur = prev.filter((l) => l.fileName === selectedTab);
-                return dedupeById([...others, ...chunk, ...cur]);
-              });
+            const el: HTMLElement | null = (window as any).__LOG_LIST_CONTAINER__;
+            const prevHeight = el ? el.scrollHeight : 0;
 
-              // Mantieni ancora visiva
-              requestAnimationFrame(() => {
-                const el2: HTMLElement | null = (window as any).__LOG_LIST_CONTAINER__;
-                if (!el2) return;
-                const newHeight = el2.scrollHeight;
-                const delta = newHeight - prevHeight;
-                if (delta > 0) el2.scrollTop += delta;
-              });
+            setAllLines((prev) => {
+              const others = prev.filter((l) => l.fileName !== selectedTab);
+              const cur = prev.filter((l) => l.fileName === selectedTab);
+              return dedupeById([...others, ...chunk, ...cur]);
+            });
 
-              minLoaded = from;
-            } else {
-              minLoaded = Math.max(1, from);
-            }
+            requestAnimationFrame(() => {
+              const el2: HTMLElement | null = (window as any).__LOG_LIST_CONTAINER__;
+              if (!el2) return;
+              const newHeight = el2.scrollHeight;
+              const delta = newHeight - prevHeight;
+              if (delta > 0) el2.scrollTop += delta;
+            });
+
+            minLoaded = from;
           } else {
             minLoaded = 1;
           }
@@ -470,23 +459,19 @@ export function useLogState() {
           if (to >= from) {
             const chunk = await prov.range(from, to);
             if (cancelled || runId !== scanRunIdRef.current) return;
-            if (chunk.length) {
-              setAllLines((prev) => {
-                const others = prev.filter((l) => l.fileName !== selectedTab);
-                const cur = prev.filter((l) => l.fileName === selectedTab);
-                return dedupeById([...others, ...cur, ...chunk]);
-              });
-              maxLoaded = to;
-            } else {
-              maxLoaded = Math.min(total, to);
-            }
+
+            setAllLines((prev) => {
+              const others = prev.filter((l) => l.fileName !== selectedTab);
+              const cur = prev.filter((l) => l.fileName === selectedTab);
+              return dedupeById([...others, ...cur, ...chunk]);
+            });
+
+            maxLoaded = to;
           } else {
             maxLoaded = total;
           }
         }
-
         dirUp = !dirUp;
-        // cediamo al main thread
         await new Promise((r) => setTimeout(r, 0));
       }
     })();
@@ -641,7 +626,7 @@ export function useLogState() {
     handleLoadMoreTop: loadMoreUp,
     currentTotal: resolvedTotal,
     isLargeProvider,
-    // nuovi metodi
+    // fixed start/end
     jumpToStart,
     jumpToEnd,
   };
