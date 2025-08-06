@@ -48,17 +48,16 @@ export default function LogViewer() {
     addEmptyTab,
   } = useLogState();
 
-  // Stato "pronto" client per evitare qualsiasi render della chat prima di leggere la preferenza
+  // Preferenza client per apertura chat
   const [ready, setReady] = React.useState(false);
   const [chatOpen, setChatOpen] = React.useState<boolean>(true);
 
-  // Alla prima mount sul client, leggi la preferenza e imposta ready
   React.useEffect(() => {
     try {
       const raw = window.localStorage.getItem(LS_CHAT_OPEN_KEY);
       if (raw === "0") setChatOpen(false);
       else if (raw === "1") setChatOpen(true);
-      else setChatOpen(true); // default aperto
+      else setChatOpen(true);
     } catch {
       setChatOpen(true);
     } finally {
@@ -66,7 +65,6 @@ export default function LogViewer() {
     }
   }, []);
 
-  // Salva preferenza quando cambia, solo dopo che siamo pronti
   React.useEffect(() => {
     if (!ready) return;
     try {
@@ -192,10 +190,15 @@ export default function LogViewer() {
             </div>
 
             {!ready ? (
-              // Riserviamo lo spazio ma non mostriamo ancora nulla della chat finché non siamo pronti
               <div className="w-14 shrink-0" />
             ) : chatOpen ? (
-              <ChatSidebar lines={currentLines} pinnedIds={pinnedIdsFlat} filter={filter} />
+              <ChatSidebar
+                lines={currentLines}
+                pinnedIds={pinnedIdsFlat}
+                filter={filter}
+                open={chatOpen}
+                onOpenChange={setChatOpen}
+              />
             ) : (
               <div className="h-full flex items-center">
                 <Button
