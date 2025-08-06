@@ -1,15 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { Send, Bot, PanelRightClose, PanelRightOpen, Settings2, Loader2, Scissors, Server, SlidersHorizontal } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import MessageContent from "./MessageContent";
+import ChatHeader from "./components/ChatHeader";
+import ChatSettings, { type CompressionConfig } from "./components/ChatSettings";
+import ChatMessages from "./components/ChatMessages";
 import type { LogLine, FilterConfig } from "./LogTypes";
-import { useI18n } from "@/components/i18n/I18nProvider";
 
 type Provider = "openai" | "deepseek" | "openrouter" | "ollama";
 type Message = { role: "system" | "user" | "assistant"; content: string };
@@ -47,9 +44,7 @@ const PROVIDER_MODELS: Record<Exclude<Provider, "ollama">, { label: string; mode
   },
 };
 
-export default function ChatSidebar({ lines, pinnedIds, filter, className, open: openProp, onOpenChange }: Props) {
-  const { t } = useI18n();
-
+export default function ChatSidebar({ lines, pinnedIds, className, open: openProp, onOpenChange }: Props) {
   // stato visibilità controllato/semicontrollato
   const [openUncontrolled, setOpenUncontrolled] = React.useState(true);
   const open = openProp ?? openUncontrolled;
@@ -68,7 +63,6 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
   const [loading, setLoading] = React.useState(false);
   const [streamBuffer, setStreamBuffer] = React.useState<string>("");
 
-  const abortRef = React.useRef<AbortController | null>(null);
   const listRef = React.useRef<HTMLDivElement | null>(null);
 
   // Toggle impostazioni (persistenza)
@@ -78,7 +72,7 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
     try {
       const raw = localStorage.getItem(LS_SETTINGS_OPEN);
       if (raw === "1") setShowSettings(true);
-      else setShowSettings(false); // default nascosto
+      else setShowSettings(false);
     } catch {}
   }, []);
   React.useEffect(() => {
@@ -87,14 +81,7 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
     } catch {}
   }, [showSettings]);
 
-  // Compression config (dichiarata PRIMA di effetti/callback che la usano)
-  type CompressionConfig = {
-    maxPinned: number;
-    maxOthers: number;
-    maxLineChars: number;
-    samplePerLevel: number;
-    includeStacks: boolean;
-  };
+  // Compression config
   const DEFAULT_COMPRESSION: CompressionConfig = {
     maxPinned: 120,
     maxOthers: 180,
@@ -110,9 +97,9 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
     const keep = Math.max(10, Math.floor((maxChars - 3) / 2));
     return text.slice(0, keep) + "..." + text.slice(-keep);
   }
-  function serializeLine(l: LogLine, maxChars: number) {
-    const content = truncateMiddle(l.content, maxChars);
-    return `[${l.level}] ${l.fileName}:${l.lineNumber} ${content}`;
+  function serializeLine(content: string, meta: { level: string; fileName: string; lineNumber: number }, maxChars: number) {
+    const clipped = truncateMiddle(content, maxChars);
+    return `[${meta.level}] ${meta.fileName}:${meta.lineNumber} ${clipped}`;
   }
   function sampleArray<T>(arr: T[], max: number): T[] {
     if (arr.length <= max) return arr;
@@ -132,73 +119,43 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
     return map;
   }
 
-  function pickContextCompressed(linesIn: LogLine[], pinnedIdsIn: string[], cfg: CompressionConfig) {
-    const pinnedSet = new Set(pinnedIdsIn);
-    const pinned = linesIn.filter((l) => pinnedSet.has(l.id)).slice(-cfg.maxPinned);
-    const nonPinned = linesIn.filter((l) => !pinnedSet.has(l.id)).slice(-cfg.maxOthers);
-
-    let stacked: LogLine[] = [];
-    if (cfg.includeStacks) {
-      const tail = nonPinned.slice(-Math.min(nonPinned.length, cfg.samplePerLevel * 4));
-      let buf: LogLine[] = [];
-      const flush = () => {
-        if (buf.length > 0) {
-          stacked.push(...buf.slice(0, 3));
-          buf = [];
-        }
-      };
-      for (let i = 0; i < tail.length; i++) {
-        const cur = tail[i];
-        if (cur.level === "ERROR" || cur.level === "WARN") {
-          if (buf.length === 0 || buf[buf.length - 1].lineNumber + 1 === cur.lineNumber) buf.push(cur);
-          else {
-            flush();
-            buf.push(cur);
-          }
-        } else {
-          flush();
-        }
-      }
-      flush();
-    }
-
+  const buildContextText = React.useCallback(() => {
+    const pinnedSet = new Set(pinnedIds);
+    const cfg = compression;
+    const pinned = lines.filter((l) => pinnedSet.has(l.id)).slice(-cfg.maxPinned);
+    const nonPinned = lines.filter((l) => !pinnedSet.has(l.id)).slice(-cfg.maxOthers);
     const grouped = groupByKey(nonPinned, (l) => l.level);
-    const sampled: LogLine[] = [];
+    const sampled: typeof lines = [];
     for (const lvl of ["ERROR", "WARN", "INFO", "DEBUG", "TRACE", "OTHER"] as const) {
       const bucket = grouped.get(lvl) || [];
       sampled.push(...sampleArray(bucket, cfg.samplePerLevel));
     }
-
     const seen = new Set<string>();
-    const ordered: LogLine[] = [];
-    const pushUnique = (arr: LogLine[]) => {
-      for (const l of arr) {
-        if (!seen.has(l.id)) {
-          seen.add(l.id);
-          ordered.push(l);
-        }
-      }
+    const ordered: typeof lines = [];
+    const pushUnique = (arr: typeof lines) => {
+      for (const l of arr) if (!seen.has(l.id)) { seen.add(l.id); ordered.push(l); }
     };
     pushUnique(pinned);
-    pushUnique(stacked);
     pushUnique(sampled);
-
-    const serialize = (arr: LogLine[]) => arr.map((l) => serializeLine(l, cfg.maxLineChars)).join("\n");
-    const pinnedText = serialize(pinned);
-    const otherText = serialize(ordered.filter((l) => !pinnedSet.has(l.id)));
-
-    return { pinnedText, otherText, totalPinned: pinned.length, totalOthers: otherText ? otherText.split("\n").length : 0 };
-  }
+    const serialize = (arr: typeof lines) =>
+      arr.map((l) => serializeLine(l.content, { level: l.level, fileName: l.fileName, lineNumber: l.lineNumber }, cfg.maxLineChars)).join("\n");
+    return {
+      pinnedText: serialize(pinned),
+      otherText: serialize(ordered.filter((l) => !pinnedSet.has(l.id))),
+      totalPinned: pinned.length,
+      totalOthers: ordered.length - pinned.length,
+    };
+  }, [lines, pinnedIds, compression]);
 
   async function callLLM(params: {
     provider: Provider;
     model: string;
     apiKey?: string;
     messages: Message[];
-    abortSignal?: AbortSignal;
     ollamaEndpoint?: string;
+    abortSignal?: AbortSignal;
   }): Promise<string> {
-    const { provider, model, apiKey, messages, abortSignal, ollamaEndpoint } = params;
+    const { provider, model, apiKey, messages, ollamaEndpoint, abortSignal } = params;
     const body = { model, messages, temperature: 0.2 };
 
     if (provider === "openai") {
@@ -234,17 +191,12 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
       const res = await fetch(`${endpoint.replace(/\/$/, "")}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model,
-          messages: messages.map((m) => ({ role: m.role, content: m.content })),
-          stream: false,
-        }),
+        body: JSON.stringify({ model, messages: messages.map((m) => ({ role: m.role, content: m.content })), stream: false }),
         signal: abortSignal,
       });
       if (!res.ok) throw new Error(`Ollama error: ${res.status} ${await res.text()}`);
       const data = await res.json();
-      const content: string = data?.message?.content ?? "";
-      return content;
+      return data?.message?.content ?? "";
     }
 
     const key = apiKey || (process.env.OPENROUTER_API_KEY as string | undefined);
@@ -265,13 +217,7 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
     provider: Provider;
     model: string;
     apiKey: string;
-    compression: {
-      maxPinned: number;
-      maxOthers: number;
-      maxLineChars: number;
-      samplePerLevel: number;
-      includeStacks: boolean;
-    };
+    compression: CompressionConfig;
     ollamaEndpoint?: string;
   };
 
@@ -283,24 +229,21 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
       if (parsed.provider && ["openai", "deepseek", "openrouter", "ollama"].includes(parsed.provider)) {
         setProvider(parsed.provider as Provider);
       }
-      if (typeof parsed.model === "string" && parsed.model.trim()) {
-        setModel(parsed.model);
-      }
-      if (typeof parsed.apiKey === "string") {
-        setApiKey(parsed.apiKey);
-      }
+      if (typeof parsed.model === "string" && parsed.model.trim()) setModel(parsed.model);
+      if (typeof parsed.apiKey === "string") setApiKey(parsed.apiKey);
       if (parsed.ollamaEndpoint) setOllamaEndpoint(parsed.ollamaEndpoint);
       if (parsed.compression) {
         setCompression({
-          maxPinned: parsed.compression.maxPinned ?? DEFAULT_COMPRESSION.maxPinned,
-          maxOthers: parsed.compression.maxOthers ?? DEFAULT_COMPRESSION.maxOthers,
-          maxLineChars: parsed.compression.maxLineChars ?? DEFAULT_COMPRESSION.maxLineChars,
-          samplePerLevel: parsed.compression.samplePerLevel ?? DEFAULT_COMPRESSION.samplePerLevel,
-          includeStacks: parsed.compression.includeStacks ?? DEFAULT_COMPRESSION.includeStacks,
+          maxPinned: parsed.compression.maxPinned ?? compression.maxPinned,
+          maxOthers: parsed.compression.maxOthers ?? compression.maxOthers,
+          maxLineChars: parsed.compression.maxLineChars ?? compression.maxLineChars,
+          samplePerLevel: parsed.compression.samplePerLevel ?? compression.samplePerLevel,
+          includeStacks: parsed.compression.includeStacks ?? compression.includeStacks,
         });
         setEnableCompression(true);
       }
     } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   React.useEffect(() => {
@@ -323,33 +266,6 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider]);
-
-  const buildContextText = React.useCallback(() => {
-    const pinnedSet = new Set(pinnedIds);
-    const cfg = compression;
-    const pinned = lines.filter((l) => pinnedSet.has(l.id)).slice(-cfg.maxPinned);
-    const nonPinned = lines.filter((l) => !pinnedSet.has(l.id)).slice(-cfg.maxOthers);
-    const grouped = groupByKey(nonPinned, (l) => l.level);
-    const sampled: LogLine[] = [];
-    for (const lvl of ["ERROR", "WARN", "INFO", "DEBUG", "TRACE", "OTHER"] as const) {
-      const bucket = grouped.get(lvl) || [];
-      sampled.push(...sampleArray(bucket, cfg.samplePerLevel));
-    }
-    const seen = new Set<string>();
-    const ordered: LogLine[] = [];
-    const pushUnique = (arr: LogLine[]) => {
-      for (const l of arr) if (!seen.has(l.id)) { seen.add(l.id); ordered.push(l); }
-    };
-    pushUnique(pinned);
-    pushUnique(sampled);
-    const serialize = (arr: LogLine[]) => arr.map((l) => serializeLine(l, cfg.maxLineChars)).join("\n");
-    return {
-      pinnedText: serialize(pinned),
-      otherText: serialize(ordered.filter((l) => !pinnedSet.has(l.id))),
-      totalPinned: pinned.length,
-      totalOthers: ordered.length - pinned.length,
-    };
-  }, [lines, pinnedIds, compression]);
 
   const send = async (question?: string) => {
     const q = (question ?? input).trim();
@@ -377,12 +293,7 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
     ];
 
     try {
-      const content = await callLLM({
-        provider,
-        model,
-        apiKey,
-        messages: nextMessages,
-      });
+      const content = await callLLM({ provider, model, apiKey, messages: nextMessages, ollamaEndpoint });
       const finalContent = content || (streamBuffer ? streamBuffer : "");
       if (finalContent) {
         setMessages((prev) => [...prev, { role: "assistant", content: finalContent }]);
@@ -393,230 +304,47 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
     }
   };
 
-  const stop = () => {
-    setLoading(false);
-  };
-
   return (
     <div className={cn("h-full flex flex-col border-l bg-transparent", className)} style={{ width: open ? 460 : 56 }}>
       <div className="p-2 h-full">
         <Card className="h-full flex flex-col overflow-hidden">
-          <div className="flex items-center justify-between px-2 py-2 border-b shrink-0">
-            <div className="flex items-center gap-2">
-              <Bot className="h-4 w-4" />
-              {open && <span className="text-sm font-medium">{t("chat_title")}</span>}
-            </div>
-            <div className="flex items-center gap-1">
-              {open && (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => setShowSettings((v) => !v)}
-                  title={showSettings ? "Nascondi impostazioni" : "Mostra impostazioni"}
-                >
-                  <SlidersHorizontal className="h-4 w-4" />
-                </Button>
-              )}
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => setOpen(!open)}
-                title={open ? "Chiudi" : "Apri"}
-              >
-                {open ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
-              </Button>
-            </div>
-          </div>
+          <ChatHeader
+            open={open}
+            showSettings={showSettings}
+            onToggleOpen={() => setOpen(!open)}
+            onToggleSettings={() => setShowSettings((v) => !v)}
+          />
 
           {open && (
             <>
-              {/* SETTINGS (toggle) */}
               {showSettings && (
-                <div className="p-2 space-y-3 border-b shrink-0">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <Settings2 className="h-4 w-4" />
-                    <span>{t("provider")}</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-2">
-                    <label className="text-xs text-muted-foreground">Provider</label>
-                    <select
-                      className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
-                      value={provider}
-                      onChange={(e) => setProvider(e.target.value as Provider)}
-                    >
-                      <option value="openrouter">OpenRouter</option>
-                      <option value="openai">OpenAI</option>
-                      <option value="deepseek">DeepSeek</option>
-                      <option value="ollama">Ollama (locale)</option>
-                    </select>
-                  </div>
-
-                  {provider !== "ollama" ? (
-                    <div className="grid grid-cols-1 gap-2">
-                      <label className="text-xs text-muted-foreground">{t("model")}</label>
-                      <select
-                        className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
-                        value={model}
-                        onChange={(e) => setModel(e.target.value)}
-                      >
-                        {PROVIDER_MODELS[provider as Exclude<Provider, "ollama">]?.models.map((m) => (
-                          <option key={m.id} value={m.id}>{m.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-2">
-                      <label className="text-xs text-muted-foreground">{t("model")}</label>
-                      <Input
-                        value={model}
-                        onChange={(e) => setModel(e.target.value)}
-                        placeholder="ollama model (es. llama3)"
-                      />
-                    </div>
-                  )}
-
-                  {provider === "ollama" ? (
-                    <div className="grid grid-cols-1 gap-2">
-                      <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Server className="h-3.5 w-3.5" />
-                        Endpoint Ollama
-                      </label>
-                      <Input
-                        value={ollamaEndpoint}
-                        onChange={(e) => setOllamaEndpoint(e.target.value)}
-                        placeholder="http://localhost:11434"
-                      />
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-1">
-                      <label className="text-xs text-muted-foreground">{t("api_key")}</label>
-                      <Input
-                        type="password"
-                        value={apiKey}
-                        onChange={(e) => setApiKey(e.target.value)}
-                        placeholder={t("api_key_hint")}
-                      />
-                      <div className="text-[11px] text-muted-foreground">
-                        {t("api_key_hint")}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm">
-                      <Scissors className="h-4 w-4" />
-                      <span>{t("compression")}</span>
-                    </div>
-                    <Switch checked={enableCompression} onCheckedChange={setEnableCompression} />
-                  </div>
-
-                  {enableCompression && (
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <label className="flex flex-col gap-1">
-                        {t("max_pinned")}
-                        <Input
-                          type="number"
-                          value={compression.maxPinned}
-                          min={0}
-                          max={1000}
-                          onChange={(e) =>
-                            setCompression((c) => ({ ...c, maxPinned: Math.max(0, Number(e.target.value) || 0) }))
-                          }
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1">
-                        {t("max_others")}
-                        <Input
-                          type="number"
-                          value={compression.maxOthers}
-                          min={0}
-                          max={2000}
-                          onChange={(e) =>
-                            setCompression((c) => ({ ...c, maxOthers: Math.max(0, Number(e.target.value) || 0) }))
-                          }
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1">
-                        {t("chars_per_line")}
-                        <Input
-                          type="number"
-                          value={compression.maxLineChars}
-                          min={40}
-                          max={2000}
-                          onChange={(e) =>
-                            setCompression((c) => ({ ...c, maxLineChars: Math.max(40, Number(e.target.value) || 40) }))
-                          }
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1">
-                        {t("sample_per_level")}
-                        <Input
-                          type="number"
-                          value={compression.samplePerLevel}
-                          min={0}
-                          max={200}
-                          onChange={(e) =>
-                            setCompression((c) => ({ ...c, samplePerLevel: Math.max(0, Number(e.target.value) || 0) }))
-                          }
-                        />
-                      </label>
-                      <label className="flex items-center gap-2 col-span-2">
-                        <Switch
-                          checked={compression.includeStacks}
-                          onCheckedChange={(v) => setCompression((c) => ({ ...c, includeStacks: v }))}
-                        />
-                        <span>{t("keep_stacks")}</span>
-                      </label>
-                      <div className="col-span-2 text-[11px] text-muted-foreground">
-                        {t("compression_hint")}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <ChatSettings
+                  provider={provider}
+                  setProvider={setProvider}
+                  model={model}
+                  setModel={setModel}
+                  apiKey={apiKey}
+                  setApiKey={setApiKey}
+                  ollamaEndpoint={ollamaEndpoint}
+                  setOllamaEndpoint={setOllamaEndpoint}
+                  enableCompression={enableCompression}
+                  setEnableCompression={setEnableCompression}
+                  compression={compression}
+                  setCompression={setCompression}
+                  providerModels={PROVIDER_MODELS as any}
+                />
               )}
 
-              {/* MESSAGES */}
-              <div ref={listRef} className="flex-1 min-h-0 overflow-auto p-2 space-y-2">
-                {messages
-                  .filter((m) => m.role !== "system")
-                  .map((m, idx) => (
-                    <Card key={idx} className={cn("p-2 text-sm", m.role === "assistant" ? "bg-muted/50" : "bg-transparent")}>
-                      {m.role === "assistant" ? <MessageContent text={m.content} /> : <div className="whitespace-pre-wrap break-words">{m.content}</div>}
-                    </Card>
-                  ))}
-                {loading && !streamBuffer && (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    {t("generating")}
-                  </div>
-                )}
-              </div>
-
-              {/* INPUT */}
-              <div className="p-2 border-t shrink-0">
-                <div className="flex gap-2">
-                  <Input
-                    placeholder={t("ask_placeholder")}
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        if (!loading) void (async () => send())();
-                      }
-                    }}
-                  />
-                  <Button onClick={() => send()} disabled={loading || !input.trim()}>
-                    <Send className="h-4 w-4" />
-                  </Button>
-                  {loading && (
-                    <Button variant="outline" onClick={() => stop()}>
-                      {t("stop")}
-                    </Button>
-                  )}
-                </div>
-              </div>
+              <ChatMessages
+                messages={messages}
+                loading={loading}
+                streamBuffer={streamBuffer}
+                input={input}
+                setInput={setInput}
+                onSend={() => void send()}
+                onStop={() => setLoading(false)}
+                listRef={listRef}
+              />
             </>
           )}
         </Card>
