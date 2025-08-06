@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { Copy } from "lucide-react";
+import { Copy, Maximize2, Minimize2 } from "lucide-react";
 import { toast } from "sonner";
 import type { LogLine } from "./LogTypes";
 import JsonGraphViewer from "./JsonGraphViewer";
@@ -103,10 +103,12 @@ function levelDotClass(level: LogLine["level"]) {
 
 export default function LogLineDetailDialog({ open, onOpenChange, line }: Props) {
   const [view, setView] = React.useState<"text" | "graph">("text");
+  const [fullscreen, setFullscreen] = React.useState(false);
 
   React.useEffect(() => {
     if (!open) return;
     setView("text");
+    setFullscreen(false);
   }, [open, line?.id]);
 
   const extraction = React.useMemo<JsonExtraction>(() => {
@@ -124,7 +126,12 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl flex flex-col min-h-0 gap-3">
+      <DialogContent
+        className={[
+          "flex flex-col min-h-0 gap-3",
+          fullscreen ? "w-screen h-screen max-w-none p-3" : "sm:max-w-3xl"
+        ].join(" ")}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {line && <span className={`inline-block h-2.5 w-2.5 rounded-full ${levelDotClass(line.level)}`} aria-hidden />}
@@ -134,7 +141,7 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
         </DialogHeader>
 
         {line && (
-          <div className="space-y-3">
+          <div className={["space-y-3", fullscreen ? "flex-1 min-h-0 flex flex-col" : ""].join(" ")}>
             <div className="text-xs text-muted-foreground">ID: {line.id}</div>
             <Separator />
 
@@ -158,6 +165,18 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
                       Grafico
                     </button>
                   </div>
+                )}
+                {view === "graph" && hasJson && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setFullscreen((v) => !v)}
+                    className="gap-2"
+                    title={fullscreen ? "Esci da schermo intero" : "Schermo intero"}
+                  >
+                    {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                    {fullscreen ? "Riduci" : "Schermo intero"}
+                  </Button>
                 )}
                 <Button size="sm" variant="outline" onClick={copyToClipboard} className="gap-2">
                   <Copy className="h-4 w-4" />
@@ -205,7 +224,9 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
             )}
 
             {hasJson && view === "graph" && (
-              <JsonGraphViewer data={(extraction as any).parsed} />
+              <div className={fullscreen ? "flex-1 min-h-0" : ""}>
+                <JsonGraphViewer data={(extraction as any).parsed} className={fullscreen ? "h-full" : undefined} />
+              </div>
             )}
           </div>
         )}

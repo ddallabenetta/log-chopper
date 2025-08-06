@@ -112,11 +112,11 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
 
     const g = svg.append("g").attr("transform", `translate(${110 - minY}, ${110 - minX})`);
 
-    // Pan/zoom
+    // Pan/zoom (esteso)
     svg.call(
       d3
         .zoom<SVGSVGElement, unknown>()
-        .scaleExtent([0.3, 4])
+        .scaleExtent([0.2, 8]) // zoom più ampio
         .on("zoom", (event) => {
           g.attr("transform", event.transform.toString());
         }) as any
@@ -166,13 +166,11 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
     const labelFor = (d: FlatNode) => {
       const key = d.key ?? "";
       if (d.kind === "object") {
-        // solo chiave + tipo
         return key === "root" ? "{ }" : `${key}  { }`;
       }
       if (d.kind === "array") {
         return key === "root" ? "[ ]" : `${key}  [ ]`;
       }
-      // foglia: chiave: valore
       if (key === "root") return d.valuePreview ?? "";
       return d.valuePreview ? `${key}: ${d.valuePreview}` : `${key}`;
     };
