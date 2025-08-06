@@ -94,18 +94,21 @@ export default function FileTabs({ tabs, selected, onSelect, onClose, onNewTab }
 
                   {!isAll && (
                     <Button
-                      variant={active ? "default" : "outline"}
+                      // Tab attiva: alta visibilità
+                      variant={active ? "destructive" : "outline"}
                       size="icon"
                       className={[
                         "ml-1 h-7 w-7 rounded-b-none rounded-md transition-colors",
-                        active ? "bg-destructive/10 hover:bg-destructive/20" : "hover:bg-accent",
+                        active
+                          ? "hover:opacity-90"
+                          : "hover:bg-accent"
                       ].join(" ")}
                       title={`Chiudi: ${t.label}`}
                       onMouseEnter={() => setHoveringCloseFor(t.id)}
                       onMouseLeave={() => setHoveringCloseFor((cur) => (cur === t.id ? null : cur))}
                       onClick={() => onClose(t.id)}
                     >
-                      <X className="h-3.5 w-3.5" />
+                      <X className={`h-3.5 w-3.5 ${active ? "text-white" : ""}`} />
                     </Button>
                   )}
                 </div>
