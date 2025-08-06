@@ -84,6 +84,16 @@ export default function LogList({
 }: Props) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
 
+  // Stato espansione per riga
+  const [expandedMap, setExpandedMap] = React.useState<Map<string, boolean>>(() => new Map());
+  const toggleExpanded = React.useCallback((id: string) => {
+    setExpandedMap((prev) => {
+      const next = new Map(prev);
+      next.set(id, !next.get(id));
+      return next;
+    });
+  }, []);
+
   const matcher = React.useMemo(() => buildMatcher(filter), [filter]);
   const passesLevel = React.useCallback(
     (lvl: LogLine["level"]) => (filter.level === "ALL" ? true : lvl === filter.level),
@@ -99,7 +109,8 @@ export default function LogList({
     });
   }, [lines, matcher, pinned, showOnlyPinned, passesLevel]);
 
-  const ROW_H = 34; // fissa e coerente con l'item
+  // Altezza base riga in modalità compatta; se espansa diventa auto.
+  const ROW_H = 34;
   const OVERSCAN = 12;
 
   const [scrollTop, setScrollTop] = React.useState(0);
@@ -189,7 +200,6 @@ export default function LogList({
     onAfterJump && onAfterJump();
   }, [jumpToId, onAfterJump]);
 
-  // Espone metodi globali affidabili per scroll-to-bottom
   React.useEffect(() => {
     (window as any).__LOG_LIST_CONTAINER__ = containerRef.current;
     (window as any).__LOG_LIST_SCROLL_TO_BOTTOM__ = () => {
@@ -205,6 +215,9 @@ export default function LogList({
     };
   }, []);
 
+  // Nota: con righe espandibili l’altezza reale varia.
+  // Manteniamo virtualizzazione semplice usando ROW_H come base; l’overscan elevato evita salti
+  // quando alcune righe sono espanse.
   const total = filtered.length;
   const startIndex = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
   const visibleCount = Math.max(0, Math.ceil((viewportH || 1) / ROW_H) + OVERSCAN * 2);
@@ -241,19 +254,22 @@ export default function LogList({
             {topPad > 0 && <div style={{ height: topPad }} />}
             {slice.map((line) => {
               const isLast = lastId === line.id;
+              const expanded = expandedMap.get(line.id) === true;
               return (
                 <div
                   key={line.id}
                   data-row-id={line.id}
                   id={isLast ? "log-last-row" : undefined}
                   className="bg-transparent"
-                  style={{ minHeight: ROW_H, height: ROW_H }}
+                  style={{ minHeight: expanded ? undefined : ROW_H }}
                 >
                   <MemoLineItem
                     line={line}
                     isPinned={pinned.has(line.id)}
                     onTogglePin={onTogglePin}
                     highlightRanges={sliceHighlightMap.get(line.id) ?? []}
+                    expanded={expanded}
+                    onToggleExpanded={toggleExpanded}
                   />
                 </div>
               );

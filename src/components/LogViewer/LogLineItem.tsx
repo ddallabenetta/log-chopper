@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Pin, PinOff, Info } from "lucide-react";
+import { Pin, PinOff, Info, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { LogLine } from "./LogTypes";
 import LogLineDetailDialog from "./LogLineDetailDialog";
@@ -11,6 +11,8 @@ type Props = {
   isPinned: boolean;
   onTogglePin: (id: string) => void;
   highlightRanges: Array<{ start: number; end: number }>;
+  expanded?: boolean;
+  onToggleExpanded?: (id: string) => void;
 };
 
 function levelDotClass(level: LogLine["level"]) {
@@ -35,6 +37,8 @@ export default function LogLineItem({
   isPinned,
   onTogglePin,
   highlightRanges,
+  expanded = false,
+  onToggleExpanded,
 }: Props) {
   const [detailOpen, setDetailOpen] = React.useState(false);
 
@@ -64,38 +68,57 @@ export default function LogLineItem({
 
   return (
     <>
-      <div className="flex items-center gap-3 px-3 py-1.5 hover:bg-accent/50 rounded h-[34px]">
-        <div
-          className="shrink-0 basis-56 max-w-[50%] text-xs text-muted-foreground tabular-nums font-mono overflow-hidden text-ellipsis whitespace-nowrap flex items-center gap-2"
-          title={`${line.fileName}:${line.lineNumber}`}
-        >
-          <span className={`inline-block h-2.5 w-2.5 rounded-full ${levelDotClass(line.level)}`} aria-hidden />
-          <span className="text-foreground/80">{line.lineNumber}</span>
-          <span className="text-muted-foreground">•</span>
-          <span className="truncate">{line.fileName}:{line.lineNumber}</span>
-        </div>
+      <div className={["px-3", expanded ? "py-2" : "py-1.5"].join(" ")}>
+        <div className={["flex items-start gap-3", expanded ? "" : "items-center"].join(" ")}>
+          {/* Meta + Toggle espansione */}
+          <div className="shrink-0 basis-56 max-w-[50%] text-xs text-muted-foreground tabular-nums font-mono overflow-hidden text-ellipsis">
+            <div className="flex items-center gap-2">
+              <button
+                className="h-5 w-5 grid place-items-center rounded hover:bg-accent/60"
+                title={expanded ? "Comprimi" : "Espandi"}
+                onClick={() => onToggleExpanded?.(line.id)}
+              >
+                {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              </button>
+              <span className={`inline-block h-2.5 w-2.5 rounded-full ${levelDotClass(line.level)}`} aria-hidden />
+              <span className="text-foreground/80">{line.lineNumber}</span>
+              <span className="text-muted-foreground">•</span>
+              <span className="truncate" title={`${line.fileName}:${line.lineNumber}`}>
+                {line.fileName}:{line.lineNumber}
+              </span>
+            </div>
+          </div>
 
-        <div className="flex-1 min-w-0 text-sm whitespace-nowrap overflow-hidden text-ellipsis" aria-label={`log-${line.id}`}>
-          {renderHighlighted(line.content)}
-        </div>
+          {/* Contenuto */}
+          <div
+            className={[
+              "flex-1 min-w-0 text-sm",
+              expanded ? "whitespace-pre-wrap break-words" : "whitespace-nowrap overflow-hidden text-ellipsis"
+            ].join(" ")}
+            aria-label={`log-${line.id}`}
+          >
+            {renderHighlighted(line.content)}
+          </div>
 
-        <div className="shrink-0 flex items-center gap-1">
-          <Button
-            size="icon"
-            variant={isPinned ? "default" : "ghost"}
-            onClick={() => onTogglePin(line.id)}
-            title={isPinned ? "Rimuovi pin" : "Pin riga"}
-          >
-            {isPinned ? <Pin className="h-4 w-4" /> : <PinOff className="h-4 w-4" />}
-          </Button>
-          <Button
-            size="icon"
-            variant="outline"
-            title="Dettaglio riga"
-            onClick={() => setDetailOpen(true)}
-          >
-            <Info className="h-4 w-4" />
-          </Button>
+          {/* Azioni */}
+          <div className="shrink-0 flex items-center gap-1">
+            <Button
+              size="icon"
+              variant={isPinned ? "default" : "ghost"}
+              onClick={() => onTogglePin(line.id)}
+              title={isPinned ? "Rimuovi pin" : "Pin riga"}
+            >
+              {isPinned ? <Pin className="h-4 w-4" /> : <PinOff className="h-4 w-4" />}
+            </Button>
+            <Button
+              size="icon"
+              variant="outline"
+              title="Dettaglio riga"
+              onClick={() => setDetailOpen(true)}
+            >
+              <Info className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
 
