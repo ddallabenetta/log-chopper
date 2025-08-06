@@ -19,7 +19,7 @@ type Props = {
   setInput: (v: string) => void;
   onSend: () => void;
   onStop: () => void;
-  listRef: React.RefObject<HTMLDivElement>;
+  listRef: React.RefObject<HTMLDivElement | null>;
 };
 
 export default function ChatMessages({
