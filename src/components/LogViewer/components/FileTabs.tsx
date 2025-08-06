@@ -16,11 +16,50 @@ type Props = {
 };
 
 export default function FileTabs({ tabs, selected, onSelect, onClose, onNewTab }: Props) {
+  const scrollRef = React.useRef<HTMLDivElement | null>(null);
+  const [showSticky, setShowSticky] = React.useState(false);
+
+  const updateSticky = React.useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) {
+      setShowSticky(false);
+      return;
+    }
+    const overflow = el.scrollWidth > el.clientWidth + 2;
+    if (!overflow) {
+      setShowSticky(false);
+      return;
+    }
+    // se l’utente è “verso destra” (ultimo 20px), attiva sticky
+    const nearRight = el.scrollLeft + el.clientWidth >= el.scrollWidth - 20;
+    setShowSticky(nearRight);
+  }, []);
+
+  React.useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    updateSticky();
+    const onScroll = () => updateSticky();
+    const onResize = () => updateSticky();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onResize);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [updateSticky]);
+
+  // Aggiorna al variare delle tab (aggiunta/rimozione)
+  React.useEffect(() => {
+    const id = requestAnimationFrame(updateSticky);
+    return () => cancelAnimationFrame(id);
+  }, [tabs.length, updateSticky]);
+
   return (
     <div className="px-3 pt-2 pb-2 border-b bg-card/50">
       <div className="relative">
-        {/* Area scrollabile delle tab con spazio a destra per il pulsante sticky */}
-        <div className="flex items-center gap-2 overflow-x-auto pr-24">
+        {/* Area scrollabile delle tab con spazio a destra per il pulsante sticky quando serve */}
+        <div ref={scrollRef} className="flex items-center gap-2 overflow-x-auto pr-24">
           <div className="flex items-center gap-1">
             {tabs.map((t) => {
               const active = t.id === selected;
@@ -57,9 +96,9 @@ export default function FileTabs({ tabs, selected, onSelect, onClose, onNewTab }
           </div>
         </div>
 
-        {/* Zona sticky a destra con gradiente e pulsante Nuovo */}
-        {onNewTab && (
-          <div className="pointer-events-none absolute right-0 top-0 h-full w-24 flex items-center justify-end bg-gradient-to-l from-card via-card/70 to-transparent">
+        {/* Zona sticky a destra con gradiente e pulsante Nuovo: visibile solo a overflow e quando si è vicino al bordo destro */}
+        {onNewTab && showSticky && (
+          <div className="pointer-events-none absolute right-0 top-0 h-full w-28 flex items-center justify-end bg-gradient-to-l from-card via-card/70 to-transparent">
             <div className="pointer-events-auto pr-1">
               <Button
                 variant="secondary"
