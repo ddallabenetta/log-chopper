@@ -112,11 +112,11 @@ export default function JsonGraphViewer({ data, className, maxNodes = 500 }: Pro
 
     const g = svg.append("g").attr("transform", `translate(${110 - minY}, ${110 - minX})`);
 
-    // Pan/zoom (esteso)
+    // Pan/zoom con zoom massimo illimitato
     svg.call(
       d3
         .zoom<SVGSVGElement, unknown>()
-        .scaleExtent([0.2, 8]) // zoom più ampio
+        .scaleExtent([0.2, Infinity]) // rimosso limite superiore
         .on("zoom", (event) => {
           g.attr("transform", event.transform.toString());
         }) as any
