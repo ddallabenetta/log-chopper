@@ -234,19 +234,6 @@ export default function LogList({
   }, [onLoadMoreTop]);
 
   React.useEffect(() => {
-    if (!jumpToId) return;
-    const el = containerRef.current;
-    if (!el) return;
-    const target = el.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(jumpToId)}"]`);
-    if (target) {
-      const top = target.offsetTop - el.clientHeight / 2;
-      el.scrollTo({ top: Math.max(0, top) });
-      setFollowBottom(false);
-    }
-    onAfterJump && onAfterJump();
-  }, [jumpToId, onAfterJump]);
-
-  React.useEffect(() => {
     (window as any).__LOG_LIST_CONTAINER__ = containerRef.current;
     (window as any).__LOG_LIST_SCROLL_TO_BOTTOM__ = () => {
       const el = containerRef.current;
@@ -318,6 +305,42 @@ export default function LogList({
     }
     return map;
   }, [slice, matcher, showOnlyPinned, filter.query]);
+
+  // Scroll verso id specifico: se non montato, stima offset con prefixHeights e retry
+  const pendingJumpRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!jumpToId) return;
+    pendingJumpRef.current = jumpToId;
+
+    const tryScroll = () => {
+      const el = containerRef.current;
+      if (!el) return;
+      const target = el.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(jumpToId)}"]`);
+      if (target) {
+        const top = target.offsetTop - el.clientHeight / 2;
+        el.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+        pendingJumpRef.current = null;
+        onAfterJump && onAfterJump();
+        return;
+      }
+
+      // Non montato: stimiamo la posizione
+      const idx = filtered.findIndex((l) => l.id === jumpToId);
+      if (idx >= 0) {
+        const approxTop = prefixHeights[idx] - el.clientHeight / 2;
+        el.scrollTo({ top: Math.max(0, approxTop) });
+        // ritenta al prossimo frame (quando si monterà la riga)
+        requestAnimationFrame(tryScroll);
+      } else {
+        // id non presente nel filtro corrente: nessuna azione
+        pendingJumpRef.current = null;
+        onAfterJump && onAfterJump();
+      }
+    };
+
+    requestAnimationFrame(tryScroll);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpToId, filtered, prefixHeights]);
 
   return (
     <div className="rounded border bg-card h-full min-h-0 flex flex-col">

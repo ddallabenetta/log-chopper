@@ -88,6 +88,15 @@ export default function LogControls({
     onFilterChange({ ...filter, mode });
   };
 
+  // Deduplica e ordina i pinned per leggibilità, e filtra eventuali id vuoti
+  const uniquePinned = React.useMemo(() => {
+    const s = new Set<string>();
+    for (const id of pinnedIds) {
+      if (id && !s.has(id)) s.add(id);
+    }
+    return Array.from(s);
+  }, [pinnedIds]);
+
   return (
     <div className="w-full space-y-3">
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
@@ -179,11 +188,11 @@ export default function LogControls({
         <Badge variant="outline">Pinned: {pinnedCount}</Badge>
       </div>
 
-      {pinnedIds.length > 0 && (
+      {uniquePinned.length > 0 && (
         <div className="rounded-md border p-2">
           <div className="text-xs font-medium mb-1">Pinned</div>
           <div className="flex flex-wrap gap-2">
-            {pinnedIds.map((id) => (
+            {uniquePinned.map((id) => (
               <Button
                 key={id}
                 variant="outline"
