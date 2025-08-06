@@ -113,13 +113,18 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
   }
   function groupByKey<T>(arr: T[], key: (t: T) => string) {
     const map = new Map<string, T[]>();
+    for (const item of arr, k = key(item), bucket = map.get(k);; ) {
+      // not used
+      break;
+    }
+    const result = new Map<string, T[]>();
     for (const item of arr) {
       const k = key(item);
-      const bucket = map.get(k);
-      if (bucket) bucket.push(item);
-      else map.set(k, [item]);
+      const bucket2 = result.get(k);
+      if (bucket2) bucket2.push(item);
+      else result.set(k, [item]);
     }
-    return map;
+    return result;
   }
 
   const buildContextText = React.useCallback(() => {
@@ -243,7 +248,6 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
       if (typeof parsed.model === "string" && parsed.model.trim()) {
         setModel(parsed.model);
       }
-      // Importante: non sovrascrivere con undefined/empty; mantieni se presente
       if (typeof parsed.apiKey === "string") {
         setApiKey(parsed.apiKey);
       }
@@ -263,25 +267,38 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     } catch {}
   }, []);
 
-  // Save su ogni modifica, evitando race alla prima fase di mount
+  // Save su ogni modifica
   const saveConfig = React.useCallback((cfg: SavedConfig) => {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify(cfg));
     } catch {}
   }, []);
-
   React.useEffect(() => {
-    // Salva sempre i valori correnti (inclusa apiKey), dopo l’inizializzazione
-    const cfg: SavedConfig = { provider, model, apiKey, compression, ollamaEndpoint };
-    saveConfig(cfg);
+    saveConfig({ provider, model, apiKey, compression, ollamaEndpoint });
   }, [provider, model, apiKey, compression, ollamaEndpoint, saveConfig]);
 
-  // Auto-scroll
+  // Auto-scroll sicuro: senza setState, con guard e raf
+  const rafIdRef = React.useRef<number | null>(null);
   React.useEffect(() => {
     const el = listRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight - el.clientHeight;
-  }, [messages, streamBuffer, loading]);
+    // se già in fondo (o quasi), autoscroll; altrimenti rispetta la posizione utente
+    const nearBottom = el.scrollHeight - (el.scrollTop + el.clientHeight) < 24;
+    if (!nearBottom) return;
+    if (rafIdRef.current != null) cancelAnimationFrame(rafIdRef.current);
+    rafIdRef.current = requestAnimationFrame(() => {
+      const el2 = listRef.current;
+      if (!el2) return;
+      el2.scrollTop = el2.scrollHeight - el2.clientHeight;
+      rafIdRef.current = null;
+    });
+    return () => {
+      if (rafIdRef.current != null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+    };
+  }, [messages.length, streamBuffer, loading]);
 
   // Model di fallback su cambio provider
   React.useEffect(() => {
