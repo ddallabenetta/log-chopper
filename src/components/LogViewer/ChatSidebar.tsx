@@ -58,6 +58,7 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
     else setOpenUncontrolled(v);
   };
 
+  // State base
   const [provider, setProvider] = React.useState<Provider>("openrouter");
   const [model, setModel] = React.useState<string>("openrouter/horizon-beta");
   const [apiKey, setApiKey] = React.useState<string>("");
@@ -66,8 +67,27 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
   const [messages, setMessages] = React.useState<Message[]>([{ role: "system", content: DEFAULT_SYSTEM_PROMPT }]);
   const [loading, setLoading] = React.useState(false);
   const [streamBuffer, setStreamBuffer] = React.useState<string>("");
+
   const abortRef = React.useRef<AbortController | null>(null);
   const listRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Compression config (dichiarata PRIMA di effetti/callback che la usano)
+  type CompressionConfig = {
+    maxPinned: number;
+    maxOthers: number;
+    maxLineChars: number;
+    samplePerLevel: number;
+    includeStacks: boolean;
+  };
+  const DEFAULT_COMPRESSION: CompressionConfig = {
+    maxPinned: 120,
+    maxOthers: 180,
+    maxLineChars: 220,
+    samplePerLevel: 40,
+    includeStacks: true,
+  };
+  const [compression, setCompression] = React.useState<CompressionConfig>(DEFAULT_COMPRESSION);
+  const [enableCompression, setEnableCompression] = React.useState(true);
 
   function truncateMiddle(text: string, maxChars: number): string {
     if (text.length <= maxChars) return text;
@@ -95,21 +115,6 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
     }
     return map;
   }
-
-  type CompressionConfig = {
-    maxPinned: number;
-    maxOthers: number;
-    maxLineChars: number;
-    samplePerLevel: number;
-    includeStacks: boolean;
-  };
-  const DEFAULT_COMPRESSION: CompressionConfig = {
-    maxPinned: 120,
-    maxOthers: 180,
-    maxLineChars: 220,
-    samplePerLevel: 40,
-    includeStacks: true,
-  };
 
   function pickContextCompressed(linesIn: LogLine[], pinnedIdsIn: string[], cfg: CompressionConfig) {
     const pinnedSet = new Set(pinnedIdsIn);
@@ -303,9 +308,6 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider]);
 
-  const [compression, setCompression] = React.useState(DEFAULT_COMPRESSION);
-  const [enableCompression, setEnableCompression] = React.useState(true);
-
   const buildContextText = React.useCallback(() => {
     const pinnedSet = new Set(pinnedIds);
     const cfg = compression;
@@ -401,7 +403,7 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
           {open && (
             <>
               <div className="p-2 space-y-2 border-b shrink-0">
-                {/* pannello impostazioni (omesso qui per brevità, invariato) */}
+                {/* impostazioni omesse per brevità */}
               </div>
 
               <div ref={listRef} className="flex-1 min-h-0 overflow-auto p-2 space-y-2">
