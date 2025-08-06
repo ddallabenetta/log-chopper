@@ -69,7 +69,6 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
   const abortRef = React.useRef<AbortController | null>(null);
   const listRef = React.useRef<HTMLDivElement | null>(null);
 
-  // helpers e tutta la logica di prima invariata...
   function truncateMiddle(text: string, maxChars: number): string {
     if (text.length <= maxChars) return text;
     const keep = Math.max(10, Math.floor((maxChars - 3) / 2));
@@ -255,18 +254,6 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
     ollamaEndpoint?: string;
   };
 
-  const DEFAULT_COMPRESSION = {
-    maxPinned: 120,
-    maxOthers: 180,
-    maxLineChars: 220,
-    samplePerLevel: 40,
-    includeStacks: true,
-  };
-
-  const [compression, setCompression] = React.useState(DEFAULT_COMPRESSION);
-  const [enableCompression, setEnableCompression] = React.useState(true);
-  const [streamBuffer, setStreamBuffer] = React.useState<string>("");
-
   React.useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_KEY);
@@ -316,6 +303,9 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider]);
 
+  const [compression, setCompression] = React.useState(DEFAULT_COMPRESSION);
+  const [enableCompression, setEnableCompression] = React.useState(true);
+
   const buildContextText = React.useCallback(() => {
     const pinnedSet = new Set(pinnedIds);
     const cfg = compression;
@@ -342,8 +332,6 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
       totalOthers: ordered.length - pinned.length,
     };
   }, [lines, pinnedIds, compression]);
-
-  const [loading, setLoading] = React.useState(false);
 
   const send = async (question?: string) => {
     const q = (question ?? input).trim();
@@ -413,7 +401,7 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
           {open && (
             <>
               <div className="p-2 space-y-2 border-b shrink-0">
-                {/* ... resto impostazioni invariato ... */}
+                {/* pannello impostazioni (omesso qui per brevità, invariato) */}
               </div>
 
               <div ref={listRef} className="flex-1 min-h-0 overflow-auto p-2 space-y-2">
