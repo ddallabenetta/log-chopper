@@ -17,20 +17,22 @@ type Props = {
 
 export default function FileTabs({ tabs, selected, onSelect, onClose, onNewTab }: Props) {
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
+  const [overflow, setOverflow] = React.useState(false);
   const [showSticky, setShowSticky] = React.useState(false);
 
   const updateSticky = React.useCallback(() => {
     const el = scrollRef.current;
     if (!el) {
+      setOverflow(false);
       setShowSticky(false);
       return;
     }
-    const overflow = el.scrollWidth > el.clientWidth + 2;
-    if (!overflow) {
+    const hasOverflow = el.scrollWidth > el.clientWidth + 2;
+    setOverflow(hasOverflow);
+    if (!hasOverflow) {
       setShowSticky(false);
       return;
     }
-    // se l’utente è “verso destra” (ultimo 20px), attiva sticky
     const nearRight = el.scrollLeft + el.clientWidth >= el.scrollWidth - 20;
     setShowSticky(nearRight);
   }, []);
@@ -49,7 +51,6 @@ export default function FileTabs({ tabs, selected, onSelect, onClose, onNewTab }
     };
   }, [updateSticky]);
 
-  // Aggiorna al variare delle tab (aggiunta/rimozione)
   React.useEffect(() => {
     const id = requestAnimationFrame(updateSticky);
     return () => cancelAnimationFrame(id);
@@ -58,8 +59,11 @@ export default function FileTabs({ tabs, selected, onSelect, onClose, onNewTab }
   return (
     <div className="px-3 pt-2 pb-2 border-b bg-card/50">
       <div className="relative">
-        {/* Area scrollabile delle tab con spazio a destra per il pulsante sticky quando serve */}
-        <div ref={scrollRef} className="flex items-center gap-2 overflow-x-auto pr-24">
+        {/* Area scrollabile delle tab con padding a destra solo se esiste sticky */}
+        <div
+          ref={scrollRef}
+          className={`flex items-center gap-2 overflow-x-auto ${overflow ? "pr-24" : ""}`}
+        >
           <div className="flex items-center gap-1">
             {tabs.map((t) => {
               const active = t.id === selected;
@@ -93,11 +97,27 @@ export default function FileTabs({ tabs, selected, onSelect, onClose, onNewTab }
                 </div>
               );
             })}
+
+            {/* Pulsante inline: visibile quando non c’è overflow, oppure c’è overflow ma non siamo a fine destra */}
+            {onNewTab && (!overflow || (overflow && !showSticky)) && (
+              <div className="pl-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-7 gap-1"
+                  onClick={onNewTab}
+                  title="Nuova tab"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Nuovo</span>
+                </Button>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Zona sticky a destra con gradiente e pulsante Nuovo: visibile solo a overflow e quando si è vicino al bordo destro */}
-        {onNewTab && showSticky && (
+        {/* Sticky a destra: solo se overflow e utente è vicino al bordo destro */}
+        {onNewTab && overflow && showSticky && (
           <div className="pointer-events-none absolute right-0 top-0 h-full w-28 flex items-center justify-end bg-gradient-to-l from-card via-card/70 to-transparent">
             <div className="pointer-events-auto pr-1">
               <Button
