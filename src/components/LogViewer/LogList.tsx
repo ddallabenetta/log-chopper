@@ -14,8 +14,9 @@ type Props = {
   onLoadMoreTop?: () => void;
   jumpToId?: string | null;
   onAfterJump?: () => void;
-  // Nuovo: callback per comunicare i match correnti
   onMatchesChange?: (matchIds: string[]) => void;
+  // nuovo: id del match corrente da evidenziare
+  currentMatchId?: string | null;
 };
 
 const MemoLineItem = React.memo(LogLineItem);
@@ -124,6 +125,7 @@ function MeasuredRow({
   highlightRanges,
   onHeightChange,
   zebraClass,
+  active,
 }: {
   line: LogLine;
   isPinned: boolean;
@@ -131,6 +133,7 @@ function MeasuredRow({
   highlightRanges: { start: number; end: number }[];
   onHeightChange: (id: string, h: number) => void;
   zebraClass: string;
+  active: boolean;
 }) {
   const ref = React.useRef<HTMLDivElement | null>(null);
   const lastH = React.useRef<number>(0);
@@ -152,7 +155,15 @@ function MeasuredRow({
   }, [line.id, onHeightChange]);
 
   return (
-    <div ref={ref} data-row-id={line.id} className={zebraClass}>
+    <div
+      ref={ref}
+      data-row-id={line.id}
+      className={[
+        zebraClass,
+        "relative",
+        active ? "ring-2 ring-primary/70 rounded-md shadow-[0_0_0_2px_rgba(59,130,246,0.4)]" : ""
+      ].join(" ")}
+    >
       <MemoLineItem
         line={line}
         isPinned={isPinned}
@@ -173,6 +184,7 @@ export default function LogList({
   jumpToId,
   onAfterJump,
   onMatchesChange,
+  currentMatchId,
 }: Props) {
   const { t } = useI18n();
 
@@ -193,7 +205,6 @@ export default function LogList({
     });
   }, [lines, matcher, pinned, showOnlyPinned, passesLevel]);
 
-  // Calcola gli ID delle righe con vero match testuale (non solo pinned)
   const matchIds = React.useMemo(() => {
     if (!filter.query && filter.level === "ALL" && !showOnlyPinned) return [];
     const res: string[] = [];
@@ -204,7 +215,6 @@ export default function LogList({
     return res;
   }, [filtered, matcher, filter.query, filter.level, showOnlyPinned]);
 
-  // Comunica l’elenco match al parent
   React.useEffect(() => {
     onMatchesChange?.(matchIds);
   }, [matchIds, onMatchesChange]);
@@ -338,7 +348,7 @@ export default function LogList({
     return Math.max(0, lo - 1);
   };
 
-  const startIndex = Math.max(0, findIndexForOffset(scrollTop) - OVERSCAN);
+  const startIndex = Math.max(0, findIndexForOffset(scrollTop) - 8);
 
   let y = prefixHeights[startIndex];
   let i = startIndex;
@@ -348,7 +358,7 @@ export default function LogList({
     y += h;
     i++;
   }
-  const endIndex = Math.min(total, i + OVERSCAN);
+  const endIndex = Math.min(total, i + 8);
 
   const topPad = prefixHeights[startIndex];
   const bottomPad = totalHeight - prefixHeights[endIndex];
@@ -415,6 +425,7 @@ export default function LogList({
             {slice.map((line, idx) => {
               const zebra = (startIndex + idx) % 2 === 0 ? "bg-background" : "bg-accent/30";
               const isLast = lastId === line.id;
+              const isActive = currentMatchId === line.id;
               return (
                 <div key={line.id} id={isLast ? "log-last-row" : undefined}>
                   <MeasuredRow
@@ -424,6 +435,7 @@ export default function LogList({
                     highlightRanges={sliceHighlightMap.get(line.id) ?? []}
                     onHeightChange={setHeight}
                     zebraClass={zebra}
+                    active={isActive}
                   />
                 </div>
               );

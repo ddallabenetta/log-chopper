@@ -120,26 +120,24 @@ export default function LogViewer() {
     currentLines.length === 0 &&
     files.find((f) => f.fileName === selectedTab)?.totalLines === 0;
 
-  // Stato per i match e indice corrente
+  // Match list e indice corrente
   const [matchIds, setMatchIds] = React.useState<string[]>([]);
   const [matchIndex, setMatchIndex] = React.useState<number>(-1);
 
   React.useEffect(() => {
-    // reset quando cambia filtro o tab
     setMatchIndex(-1);
   }, [filter.mode, filter.query, filter.caseSensitive, filter.level, showOnlyPinned, selectedTab]);
 
-  const overallTotal = (() => {
-    const hasActiveFilter =
-      showOnlyPinned ||
-      filter.level !== "ALL" ||
-      (filter.query && filter.query.trim().length > 0);
+  const hasActiveFilter =
+    showOnlyPinned ||
+    filter.level !== "ALL" ||
+    (filter.query && filter.query.trim().length > 0);
 
-    if (hasActiveFilter) {
-      return matchIds.length;
-    }
-    return selectedTab === ALL_TAB_ID ? currentLines.length : currentTotal ?? currentLines.length;
-  })();
+  const overallTotal = hasActiveFilter
+    ? matchIds.length
+    : selectedTab === ALL_TAB_ID
+      ? currentLines.length
+      : currentTotal ?? currentLines.length;
 
   const goToMatchAt = (idx: number) => {
     if (matchIds.length === 0) return;
@@ -150,6 +148,8 @@ export default function LogViewer() {
 
   const goPrevMatch = () => goToMatchAt((matchIndex === -1 ? 0 : matchIndex) - 1);
   const goNextMatch = () => goToMatchAt((matchIndex === -1 ? 0 : matchIndex) + 1);
+
+  const currentMatchId = matchIndex >= 0 ? matchIds[matchIndex] : null;
 
   return (
     <Card className="w-screen h-[calc(100vh-56px)] max-w-none rounded-none border-0 flex flex-col overflow-hidden">
@@ -194,13 +194,11 @@ export default function LogViewer() {
             onFilesSelected={(fl) => addFiles(fl)}
             pinnedIds={pinnedIdsFlat}
             onJumpToId={onJumpToId}
-            pageSize={pageSize}
-            onChangePageSize={setPageSize}
-            onLoadMoreUp={loadMoreUp}
-            onLoadMoreDown={loadMoreDown}
             onJumpToLine={jumpToLine}
+            // frecce accanto all'input
             onPrevMatch={goPrevMatch}
             onNextMatch={goNextMatch}
+            matchesEnabled={hasActiveFilter && matchIds.length > 0}
           />
         </div>
 
@@ -228,9 +226,7 @@ export default function LogViewer() {
 
           <div className="flex-1 min-w-0 overflow-hidden flex relative">
             <div className="flex-1 min-w-0 overflow-auto relative">
-              {selectedTab !== ALL_TAB_ID &&
-              currentLines.length === 0 &&
-              files.find((f) => f.fileName === selectedTab)?.totalLines === 0 ? (
+              {showEmptyHint ? (
                 <div className="h-full grid place-items-center p-6">
                   <div className="rounded-lg border bg-card px-6 py-5 text-sm text-center space-y-2">
                     <div className="text-base font-medium">{t("drop_files_here")}</div>
@@ -250,6 +246,7 @@ export default function LogViewer() {
                   jumpToId={pendingJumpId}
                   onAfterJump={() => setPendingJumpId(null)}
                   onMatchesChange={setMatchIds}
+                  currentMatchId={currentMatchId}
                 />
               )}
             </div>

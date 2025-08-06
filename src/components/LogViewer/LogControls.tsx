@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Upload, Regex, CaseSensitive, Pin, Filter, Navigation, ArrowDownToLine, Target, ChevronLeft, ChevronRight } from "lucide-react";
+import { Upload, Regex, CaseSensitive, Pin, Filter, Navigation, ArrowDownToLine, Target, ChevronUp, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -23,9 +23,10 @@ type Props = {
   pinnedIds?: string[];
   onJumpToId?: (id: string) => void;
   onJumpToLine?: (n: number) => void;
-  // Navigazione match
+  // Navigazione match su/giù e abilitazione
   onPrevMatch?: () => void;
   onNextMatch?: () => void;
+  matchesEnabled?: boolean;
 };
 
 const LEVEL_OPTIONS = (t: (k: string) => string): Array<{ label: string; value: FilterConfig["level"] }> => [
@@ -61,6 +62,7 @@ export default function LogControls({
   onJumpToLine,
   onPrevMatch,
   onNextMatch,
+  matchesEnabled = false,
 }: Props) {
   const { t } = useI18n();
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -139,15 +141,40 @@ export default function LogControls({
         </div>
 
         <div className="flex-1 flex items-center gap-2">
-          <Input
-            placeholder={
-              filter.mode === "regex"
-                ? t("filter_regex_placeholder")
-                : t("filter_text_placeholder")
-            }
-            value={localQuery}
-            onChange={(e) => setLocalQuery(e.target.value)}
-          />
+          <div className="flex-1 flex items-center gap-2">
+            <Input
+              placeholder={
+                filter.mode === "regex"
+                  ? t("filter_regex_placeholder")
+                  : t("filter_text_placeholder")
+              }
+              value={localQuery}
+              onChange={(e) => setLocalQuery(e.target.value)}
+            />
+            <div className="flex items-center gap-1">
+              <Button
+                size="icon"
+                variant="outline"
+                className="h-9 w-9"
+                onClick={onPrevMatch}
+                disabled={!matchesEnabled}
+                title="Precedente"
+              >
+                <ChevronUp className="h-4 w-4" />
+              </Button>
+              <Button
+                size="icon"
+                variant="outline"
+                className="h-9 w-9"
+                onClick={onNextMatch}
+                disabled={!matchesEnabled}
+                title="Successivo"
+              >
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
           <Tabs
             value={filter.mode}
             onValueChange={(v) => setMode(v as FilterMode)}
@@ -202,17 +229,6 @@ export default function LogControls({
           </Badge>
           <Badge>{t("visible")}: {visibleCount}</Badge>
           <Badge variant="outline">{t("pinned")}: {pinnedCount}</Badge>
-
-          {hasActiveFilter && (
-            <div className="flex items-center gap-1 ml-2">
-              <Button size="sm" variant="outline" className="h-8" onClick={onPrevMatch} title="Precedente">
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button size="sm" variant="outline" className="h-8" onClick={onNextMatch} title="Successivo">
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
         </div>
 
         <div className="flex-1" />
