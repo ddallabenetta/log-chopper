@@ -174,18 +174,17 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
                     </button>
                   </div>
                 )}
-                {view === "graph" && hasJson && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setFullscreen((v) => !v)}
-                    className="gap-2"
-                    title={fullscreen ? "Esci da schermo intero" : "Schermo intero"}
-                  >
-                    {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-                    {fullscreen ? "Riduci" : "Schermo intero"}
-                  </Button>
-                )}
+                {/* Mostra sempre il pulsante per schermo intero, indipendentemente dalla vista */}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setFullscreen((v) => !v)}
+                  className="gap-2"
+                  title={fullscreen ? "Esci da schermo intero" : "Schermo intero"}
+                >
+                  {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                  {fullscreen ? "Riduci" : "Schermo intero"}
+                </Button>
                 <Button size="sm" variant="outline" onClick={copyToClipboard} className="gap-2">
                   <Copy className="h-4 w-4" />
                   Copia
