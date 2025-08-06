@@ -10,7 +10,7 @@ import { useLogState, ALL_TAB_ID } from "./hooks/useLogState";
 import FileTabs, { type Tab as FileTab } from "./components/FileTabs";
 import DragOverlay from "./components/DragOverlay";
 import { Button } from "@/components/ui/button";
-import { Bot, PanelRightOpen } from "lucide-react";
+import { PanelRightOpen } from "lucide-react";
 import { useI18n } from "@/components/i18n/I18nProvider";
 
 const LS_CHAT_OPEN_KEY = "logviewer.chat.open.v1";
@@ -48,6 +48,9 @@ export default function LogViewer() {
     addEmptyTab,
     pageSize,
     setPageSize,
+    loadMoreUp,
+    loadMoreDown,
+    jumpToLine,
   } = useLogState();
 
   const [ready, setReady] = React.useState(false);
@@ -154,6 +157,9 @@ export default function LogViewer() {
             onJumpToId={onJumpToId}
             pageSize={pageSize}
             onChangePageSize={setPageSize}
+            onLoadMoreUp={loadMoreUp}
+            onLoadMoreDown={loadMoreDown}
+            onJumpToLine={jumpToLine}
           />
         </div>
 
@@ -192,26 +198,15 @@ export default function LogViewer() {
 
             {!ready ? (
               <div className="w-14 shrink-0" />
-            ) : chatOpen ? (
+            ) : (
+              // Sidebar AI come prima
               <ChatSidebar
                 lines={currentLines}
                 pinnedIds={pinnedIdsFlat}
                 filter={filter}
-                open={chatOpen}
-                onOpenChange={setChatOpen}
+                open={true}
+                onOpenChange={() => {}}
               />
-            ) : (
-              <div className="h-full flex items-center">
-                <Button
-                  variant="default"
-                  size="icon"
-                  className="mx-2 rounded-full shadow hover:shadow-md transition-all"
-                  title="Apri assistant"
-                  onClick={() => setChatOpen(true)}
-                >
-                  <PanelRightOpen className="h-5 w-5" />
-                </Button>
-              </div>
             )}
           </div>
         </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Upload, Regex, CaseSensitive, Pin, Filter, Navigation, ArrowDownToLine, Rows3 } from "lucide-react";
+import { Upload, Regex, CaseSensitive, Pin, Filter, Navigation, ArrowDownToLine, Rows3, ChevronUp, ChevronDown, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -22,9 +22,12 @@ type Props = {
   onFilesSelected: (files: FileList) => void;
   pinnedIds?: string[];
   onJumpToId?: (id: string) => void;
-  // Nuove props per paginazione
   pageSize?: number;
   onChangePageSize?: (v: number) => void;
+  // nuovi handler
+  onLoadMoreUp?: () => void;
+  onLoadMoreDown?: () => void;
+  onJumpToLine?: (n: number) => void;
 };
 
 const LEVEL_OPTIONS = (t: (k: string) => string): Array<{ label: string; value: FilterConfig["level"] }> => [
@@ -59,12 +62,17 @@ export default function LogControls({
   onJumpToId,
   pageSize = 20000,
   onChangePageSize,
+  onLoadMoreUp,
+  onLoadMoreDown,
+  onJumpToLine,
 }: Props) {
   const { t } = useI18n();
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const [localQuery, setLocalQuery] = React.useState(filter.query);
   const debouncedQuery = useDebouncedValue(localQuery, 200);
+
+  const [jumpLine, setJumpLine] = React.useState<string>("");
 
   React.useEffect(() => {
     if (debouncedQuery !== filter.query) {
@@ -100,6 +108,12 @@ export default function LogControls({
 
   const goBottom = () => {
     (window as any).__LOG_LIST_SCROLL_TO_BOTTOM__?.();
+  };
+
+  const triggerJump = () => {
+    const n = Number(jumpLine);
+    if (!Number.isFinite(n) || n <= 0) return;
+    onJumpToLine?.(Math.floor(n));
   };
 
   return (
@@ -193,8 +207,7 @@ export default function LogControls({
 
         <div className="flex-1" />
 
-        <div className="flex items-center gap-2">
-          {/* Righe per pagina (nuova configurazione) */}
+        <div className="flex items-center gap-2 flex-wrap">
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <Rows3 className="h-4 w-4" />
             Righe per pagina
@@ -208,6 +221,46 @@ export default function LogControls({
               className="h-8 w-28"
             />
           </label>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-2"
+            onClick={onLoadMoreUp}
+            title="Carica più su"
+          >
+            <ChevronUp className="h-4 w-4" />
+            Su
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-2"
+            onClick={onLoadMoreDown}
+            title="Carica più giù"
+          >
+            <ChevronDown className="h-4 w-4" />
+            Giù
+          </Button>
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-muted-foreground flex items-center gap-1">
+              <Target className="h-4 w-4" />
+              Vai alla riga
+            </label>
+            <Input
+              type="number"
+              min={1}
+              step={100}
+              value={jumpLine}
+              onChange={(e) => setJumpLine(e.target.value)}
+              className="h-8 w-28"
+            />
+            <Button variant="default" size="sm" className="h-8" onClick={triggerJump}>
+              Vai
+            </Button>
+          </div>
 
           <Button
             variant="default"
