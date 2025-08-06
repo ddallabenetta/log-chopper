@@ -73,6 +73,49 @@ function useRafThrottle<T extends (...args: any[]) => void>(fn: T) {
   return throttled as T;
 }
 
+// Batch updater per le altezze: accorpa più misure in un singolo setState per frame
+function useHeightsBatch() {
+  const [heights, setHeights] = React.useState<Map<string, number>>(() => new Map());
+  const pendingRef = React.useRef<Map<string, number>>(new Map());
+  const rafRef = React.useRef<number | null>(null);
+
+  const flush = React.useCallback(() => {
+    rafRef.current = null;
+    if (pendingRef.current.size === 0) return;
+    setHeights((prev) => {
+      let changed = false;
+      const next = new Map(prev);
+      pendingRef.current.forEach((h, id) => {
+        const old = next.get(id);
+        if (old !== h) {
+          next.set(id, h);
+          changed = true;
+        }
+      });
+      pendingRef.current.clear();
+      return changed ? next : prev;
+    });
+  }, []);
+
+  const queue = React.useCallback((id: string, h: number) => {
+    const old = pendingRef.current.get(id);
+    if (old === h) return;
+    pendingRef.current.set(id, h);
+    if (rafRef.current == null) {
+      rafRef.current = requestAnimationFrame(flush);
+    }
+  }, [flush]);
+
+  React.useEffect(() => {
+    return () => {
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      pendingRef.current.clear();
+    };
+  }, []);
+
+  return { heights, queueHeight: queue };
+}
+
 function MeasuredRow({
   line,
   isPinned,
@@ -152,18 +195,14 @@ export default function LogList({
   }, [lines, matcher, pinned, showOnlyPinned, passesLevel]);
 
   const ESTIMATE = 34;
+  const OVERSCAN = 8;
 
-  const [heights, setHeights] = React.useState<Map<string, number>>(() => new Map());
+  const { heights, queueHeight } = useHeightsBatch();
 
   const setHeight = React.useCallback((id: string, h: number) => {
-    setHeights((prev) => {
-      const old = prev.get(id);
-      if (old === h) return prev;
-      const next = new Map(prev);
-      next.set(id, h);
-      return next;
-    });
-  }, []);
+    // Debounce naturale via rAF nel batch updater
+    queueHeight(id, h);
+  }, [queueHeight]);
 
   const [scrollTop, setScrollTop] = React.useState(0);
   const [viewportH, setViewportH] = React.useState(0);
@@ -201,11 +240,17 @@ export default function LogList({
     const el = containerRef.current;
     if (!el) return;
     if (!didInitScrollBottomRef.current && filtered.length > 0) {
-      requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight - el.clientHeight;
+      // Applica scroll solo se già vicino al fondo per evitare ping-pong
+      const nearBottom = el.scrollHeight - (el.scrollTop + el.clientHeight) < 24;
+      if (nearBottom) {
+        requestAnimationFrame(() => {
+          el.scrollTop = el.scrollHeight - el.clientHeight;
+          didInitScrollBottomRef.current = true;
+          setFollowBottom(true);
+        });
+      } else {
         didInitScrollBottomRef.current = true;
-        setFollowBottom(true);
-      });
+      }
     }
   }, [filtered.length]);
 
@@ -280,7 +325,7 @@ export default function LogList({
     return Math.max(0, lo - 1);
   };
 
-  const startIndex = Math.max(0, findIndexForOffset(scrollTop) - 8);
+  const startIndex = Math.max(0, findIndexForOffset(scrollTop) - OVERSCAN);
 
   let y = prefixHeights[startIndex];
   let i = startIndex;
@@ -290,7 +335,7 @@ export default function LogList({
     y += h;
     i++;
   }
-  const endIndex = Math.min(total, i + 8);
+  const endIndex = Math.min(total, i + OVERSCAN);
 
   const topPad = prefixHeights[startIndex];
   const bottomPad = totalHeight - prefixHeights[endIndex];
@@ -309,19 +354,19 @@ export default function LogList({
     return map;
   }, [slice, matcher, showOnlyPinned, filter.query]);
 
-  const pendingJumpRef = React.useRef<string | null>(null);
   React.useEffect(() => {
     if (!jumpToId) return;
-    pendingJumpRef.current = jumpToId;
+    const el = containerRef.current;
+    if (!el) return;
+
+    let cancelled = false;
 
     const tryScroll = () => {
-      const el = containerRef.current;
-      if (!el) return;
+      if (cancelled) return;
       const target = el.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(jumpToId)}"]`);
       if (target) {
         const top = target.offsetTop - el.clientHeight / 2;
         el.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
-        pendingJumpRef.current = null;
         onAfterJump && onAfterJump();
         return;
       }
@@ -332,12 +377,14 @@ export default function LogList({
         el.scrollTo({ top: Math.max(0, approxTop) });
         requestAnimationFrame(tryScroll);
       } else {
-        pendingJumpRef.current = null;
         onAfterJump && onAfterJump();
       }
     };
 
     requestAnimationFrame(tryScroll);
+    return () => {
+      cancelled = true;
+    };
   }, [jumpToId, filtered, prefixHeights, onAfterJump]);
 
   return (
