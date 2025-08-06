@@ -124,7 +124,7 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent className="sm:max-w-3xl flex flex-col min-h-0 gap-3">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {line && <span className={`inline-block h-2.5 w-2.5 rounded-full ${levelDotClass(line.level)}`} aria-hidden />}
