@@ -45,7 +45,6 @@ const PROVIDER_MODELS: Record<Exclude<Provider, "ollama">, { label: string; mode
 };
 
 export default function ChatSidebar({ lines, pinnedIds, className, open: openProp, onOpenChange }: Props) {
-  // stato visibilità controllato/semicontrollato
   const [openUncontrolled, setOpenUncontrolled] = React.useState(true);
   const open = openProp ?? openUncontrolled;
   const setOpen = (v: boolean) => {
@@ -53,7 +52,6 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     else setOpenUncontrolled(v);
   };
 
-  // State base
   const [provider, setProvider] = React.useState<Provider>("openrouter");
   const [model, setModel] = React.useState<string>("openrouter/horizon-beta");
   const [apiKey, setApiKey] = React.useState<string>("");
@@ -65,7 +63,6 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
 
   const listRef = React.useRef<HTMLDivElement | null>(null);
 
-  // Toggle impostazioni (persistenza)
   const LS_SETTINGS_OPEN = "logviewer.chat.settings.open";
   const [showSettings, setShowSettings] = React.useState(false);
   React.useEffect(() => {
@@ -81,7 +78,6 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     } catch {}
   }, [showSettings]);
 
-  // Compression config
   const DEFAULT_COMPRESSION: CompressionConfig = {
     maxPinned: 120,
     maxOthers: 180,
@@ -299,6 +295,27 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
         setMessages((prev) => [...prev, { role: "assistant", content: finalContent }]);
         setStreamBuffer("");
       }
+    } catch (err: unknown) {
+      const hint =
+        provider === "ollama"
+          ? "Verifica che l'endpoint Ollama sia raggiungibile e che il modello esista."
+          : provider === "openai"
+          ? "Controlla la API Key e i limiti del modello selezionato."
+          : provider === "deepseek"
+          ? "Controlla la API Key DeepSeek e il modello selezionato."
+          : "Controlla la API Key OpenRouter e il modello selezionato.";
+      const message = err instanceof Error ? err.message : String(err);
+      const errorReply = [
+        "Si è verificato un errore durante la generazione della risposta.",
+        "",
+        `Dettagli: ${message}`,
+        "",
+        "Suggerimenti:",
+        `- Provider: ${provider}`,
+        `- Modello: ${model}`,
+        `- ${hint}`,
+      ].join("\n");
+      setMessages((prev) => [...prev, { role: "assistant", content: errorReply }]);
     } finally {
       setLoading(false);
     }
