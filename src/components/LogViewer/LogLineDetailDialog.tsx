@@ -84,6 +84,23 @@ function extractFirstJsonBlock(raw: string): JsonExtraction {
   return { kind: "none", raw };
 }
 
+function levelDotClass(level: LogLine["level"]) {
+  switch (level) {
+    case "ERROR":
+      return "bg-red-500";
+    case "WARN":
+      return "bg-yellow-500";
+    case "INFO":
+      return "bg-blue-500";
+    case "DEBUG":
+      return "bg-emerald-500";
+    case "TRACE":
+      return "bg-purple-500";
+    default:
+      return "bg-gray-400";
+  }
+}
+
 export default function LogLineDetailDialog({ open, onOpenChange, line }: Props) {
   const [view, setView] = React.useState<"text" | "graph">("text");
 
@@ -110,6 +127,7 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
+            {line && <span className={`inline-block h-2.5 w-2.5 rounded-full ${levelDotClass(line.level)}`} aria-hidden />}
             <Badge variant="secondary">{line?.level}</Badge>
             <span className="truncate">{line?.fileName}:{line?.lineNumber}</span>
           </DialogTitle>
