@@ -1,3 +1,4 @@
+=1px) in MeasuredRow.">
 "use client";
 
 import * as React from "react";
@@ -17,8 +18,6 @@ type Props = {
 };
 
 const MemoLineItem = React.memo(LogLineItem);
-
-// ...resto invariato fino al render finale
 
 function buildMatcher(filter: FilterConfig): ((text: string) => { match: boolean; ranges: { start: number; end: number }[] }) {
   if (!filter.query) return () => ({ match: true, ranges: [] });
@@ -91,15 +90,24 @@ function MeasuredRow({
   zebraClass: string;
 }) {
   const ref = React.useRef<HTMLDivElement | null>(null);
+  const lastH = React.useRef<number>(0);
 
   React.useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => {
-      onHeightChange(line.id, el.getBoundingClientRect().height);
-    });
+
+    const measure = () => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      if (Math.abs(h - lastH.current) >= 1) {
+        lastH.current = h;
+        onHeightChange(line.id, h);
+      }
+    };
+
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
-    onHeightChange(line.id, el.getBoundingClientRect().height);
+    // misura iniziale
+    measure();
     return () => ro.disconnect();
   }, [line.id, onHeightChange]);
 
@@ -126,10 +134,6 @@ export default function LogList({
   onAfterJump,
 }: Props) {
   const { t } = useI18n();
-  // ...tutto il resto invariato fino al render
-
-  // (codice originale non modificato per la logica, solo messaggio finale)
-  // Copio il resto del componente originale a partire da qui:
 
   const containerRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -178,7 +182,8 @@ export default function LogList({
   const handleResize = useRafThrottle(() => {
     const el = containerRef.current;
     if (!el) return;
-    setViewportH(el.clientHeight);
+    const h = el.clientHeight;
+    setViewportH(h);
   });
 
   React.useEffect(() => {
