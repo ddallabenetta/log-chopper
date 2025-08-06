@@ -164,18 +164,15 @@ export default function LogViewer() {
     });
   }, [allLines, pinnedByFile, files, maxLines]);
 
+  // Aggiunge nuovi file senza svuotare lo stato corrente
   const addFiles = async (list: FileList | File[]) => {
-    clearAll(false);
-
     const arr = Array.from(list);
     if (arr.length === 0) return;
     setIngesting(true);
-    const newStats: FileIngestStats[] = [];
-    const newParsedFiles: ParsedFile[] = [];
-    const newLinesAll: LogLine[] = [];
 
-    // reset pin per nuovi file
-    setPinnedByFile(new Map());
+    // Mappa temporanea fileName -> array righe per aggiornare conteggi
+    const tempByFile = new Map<string, LogLine[]>();
+    const newStats: FileIngestStats[] = [];
 
     for (const f of arr) {
       const fileName = f.name;
@@ -183,10 +180,12 @@ export default function LogViewer() {
       let dropped = 0;
       const linesForFile: LogLine[] = [];
       const batch: LogLine[] = [];
+
       for await (const rawLine of streamLines(f)) {
         totalLines++;
+        const id = `${fileName}:${totalLines}`;
         const lineObj: LogLine = {
-          id: `${fileName}:${totalLines}`,
+          id,
           fileName,
           lineNumber: totalLines,
           content: rawLine,
@@ -195,56 +194,62 @@ export default function LogViewer() {
 
         linesForFile.push(lineObj);
         batch.push(lineObj);
-        newLinesAll.push(lineObj);
-
-        if (newLinesAll.length > maxLines) {
-          const removeCount = newLinesAll.length - maxLines;
-          dropped += removeCount;
-          newLinesAll.splice(0, removeCount);
-        }
 
         if (batch.length >= 2000) {
           const publish = batch.splice(0, batch.length);
           setAllLines((prev) => {
-            const merged = dedupeById([...prev, ...publish]);
-            if (merged.length > maxLines) {
-              return merged.slice(-maxLines);
-            }
+            // evita duplicati quando si ricarica lo stesso file
+            const prevIds = new Set(prev.map((l) => l.id));
+            const merged = dedupeById([...prev, ...publish.filter(l => !prevIds.has(l.id))]);
+            if (merged.length > maxLines) return merged.slice(-maxLines);
             return merged;
           });
           await new Promise((r) => setTimeout(r));
         }
       }
 
+      // flush finale
       setAllLines((prev) => {
-        const merged = dedupeById([...prev, ...batch]);
+        const prevIds = new Set(prev.map((l) => l.id));
+        const merged = dedupeById([...prev, ...batch.filter(l => !prevIds.has(l.id))]);
         if (merged.length > maxLines) {
+          const removeCount = merged.length - maxLines;
+          dropped += removeCount;
           return merged.slice(-maxLines);
         }
         return merged;
       });
 
-      pendingOlderRef.current = [...linesForFile];
-      newParsedFiles.push({
-        fileName,
-        lines: linesForFile,
-        totalLines,
+      tempByFile.set(fileName, linesForFile);
+
+      // aggiorna / crea entry file
+      setFiles((prev) => {
+        const idx = prev.findIndex((p) => p.fileName === fileName);
+        if (idx === -1) {
+          return [...prev, { fileName, lines: linesForFile, totalLines }];
+        }
+        const next = [...prev];
+        // sostituisco la collezione per conteggio aggiornato
+        next[idx] = { fileName, lines: linesForFile, totalLines };
+        return next;
       });
 
-      newStats.push({
-        fileName,
-        totalLines,
-        droppedLines: dropped,
+      newStats.push({ fileName, totalLines, droppedLines: dropped });
+    }
+
+    setIngestStats(newStats);
+    if (selectedTab === ALL_TAB_ID) {
+      // rimani su "Tutti"
+    } else {
+      // se la tab selezionata non esiste più, torna a "Tutti"
+      setSelectedTab((cur) => {
+        const exists = cur === ALL_TAB_ID || files.some((f) => f.fileName === cur);
+        return exists ? cur : ALL_TAB_ID;
       });
     }
 
-    setFiles(newParsedFiles);
-    setIngestStats(newStats);
-    // seleziona la prima tab file, ma manteniamo anche la tab "Tutti"
-    setSelectedTab(ALL_TAB_ID);
-
     setIngesting(false);
-    toast.success(`${arr.length} file caricati (stream)`);
+    toast.success(`${arr.length} file caricati`);
 
     queueMicrotask(() => {
       scrollListToBottom();
@@ -283,6 +288,29 @@ export default function LogViewer() {
     pendingOlderRef.current = [];
     if (showToast) toast.message("Pulito");
     import("@/lib/idb").then((m) => m.idbClearAll());
+  };
+
+  // Chiude una tab file: rimuove righe, pin e aggiorna persistenza
+  const closeFileTab = (fileName: string) => {
+    if (!fileName || fileName === ALL_TAB_ID) return;
+
+    setAllLines((prev) => prev.filter((l) => l.fileName !== fileName));
+    setFiles((prev) => prev.filter((f) => f.fileName !== fileName));
+    setPinnedByFile((prev) => {
+      const next = new Map(prev);
+      next.delete(fileName);
+      // aggiorna idb pin flat
+      const flat = Array.from(next.values()).flatMap((s) => Array.from(s));
+      idbUpdatePinned(flat);
+      return next;
+    });
+
+    // se stavi guardando quella tab, passa a "Tutti"
+    setSelectedTab((cur) => (cur === fileName ? ALL_TAB_ID : cur));
+
+    toast.message(`Tab chiusa: ${fileName}`);
+
+    queueMicrotask(() => persistAll());
   };
 
   // Filtra righe in base alla tab selezionata
@@ -468,24 +496,38 @@ export default function LogViewer() {
           />
         </div>
 
-        {/* Tabs per file */}
+        {/* Tabs per file con pulsante chiusura */}
         <div className="px-3 pb-2 border-b">
           <div className="flex items-center gap-1 overflow-auto">
             {fileTabs.map((t) => {
               const active = t.id === selectedTab;
+              const isAll = t.id === ALL_TAB_ID;
               return (
-                <button
-                  key={t.id}
-                  onClick={() => setSelectedTab(t.id)}
-                  className={[
-                    "px-3 py-1.5 rounded-t-md border-b-2 text-sm whitespace-nowrap",
-                    active ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
-                  ].join(" ")}
-                  title={t.label}
-                >
-                  <span className="font-medium">{t.label}</span>
-                  <span className="ml-2 text-xs text-muted-foreground">({t.count})</span>
-                </button>
+                <div key={t.id} className="flex items-center">
+                  <button
+                    onClick={() => setSelectedTab(t.id)}
+                    className={[
+                      "px-3 py-1.5 rounded-t-md border-b-2 text-sm whitespace-nowrap",
+                      active ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+                    ].join(" ")}
+                    title={t.label}
+                  >
+                    <span className="font-medium">{t.label}</span>
+                    <span className="ml-2 text-xs text-muted-foreground">({t.count})</span>
+                  </button>
+                  {!isAll && (
+                    <button
+                      className={[
+                        "ml-1 px-1.5 py-1 text-xs rounded-b-none rounded-md border",
+                        "hover:bg-accent text-muted-foreground"
+                      ].join(" ")}
+                      title={`Chiudi ${t.label}`}
+                      onClick={() => closeFileTab(t.id)}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
               );
             })}
           </div>
