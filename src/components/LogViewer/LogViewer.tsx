@@ -51,6 +51,18 @@ type FileIngestStats = {
   droppedLines: number;
 };
 
+// Utility: deduplica per id preservando l'ordine dell'array (prima occorrenza vince)
+function dedupeById<T extends { id: string }>(arr: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of arr) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    out.push(item);
+  }
+  return out;
+}
+
 export default function LogViewer() {
   const [files, setFiles] = React.useState<ParsedFile[]>([]);
   const [allLines, setAllLines] = React.useState<LogLine[]>([]);
@@ -79,7 +91,6 @@ export default function LogViewer() {
       setIsRestoring(true);
       const saved = await idbLoadState();
       if (saved) {
-        // Mappa a LogLine
         const restoredLines: LogLine[] = saved.allLines.map((l) => ({
           id: l.id,
           fileName: l.fileName,
@@ -88,17 +99,19 @@ export default function LogViewer() {
           level: (l.level as LogLevel) || "OTHER",
         }));
 
-        // ORDINE STABILE: per fileName asc, poi lineNumber asc (numerico)
         restoredLines.sort((a, b) => {
           if (a.fileName === b.fileName) return a.lineNumber - b.lineNumber;
           return a.fileName.localeCompare(b.fileName);
         });
 
-        setAllLines(restoredLines);
+        // dedup a ripristino nel caso l'idb contenga doppioni
+        const uniqueRestored = dedupeById(restoredLines);
 
-        // Ricostruisci files coerentemente (già ordinati per numero riga)
+        setAllLines(uniqueRestored);
+
+        // Ricostruisci files
         const byFile = new Map<string, LogLine[]>();
-        for (const l of restoredLines) {
+        for (const l of uniqueRestored) {
           const arr = byFile.get(l.fileName);
           if (arr) arr.push(l);
           else byFile.set(l.fileName, [l]);
@@ -113,10 +126,9 @@ export default function LogViewer() {
         setPinned(new Set(saved.pinnedIds));
         setMaxLines(saved.maxLines || 50000);
 
-        // Conserva tutte le righe per caricare "older" se si scrolla in alto
-        pendingOlderRef.current = restoredLines.slice();
+        pendingOlderRef.current = uniqueRestored.slice();
 
-        toast.message(`Log ripristinati (${restoredLines.length.toLocaleString()} righe)`);
+        toast.message(`Log ripristinati (${uniqueRestored.length.toLocaleString()} righe)`);
       }
       setIsRestoring(false);
     })();
@@ -141,7 +153,6 @@ export default function LogViewer() {
   }, [allLines, pinned, files, maxLines]);
 
   const addFiles = async (list: FileList | File[]) => {
-    // Ogni nuovo caricamento sostituisce i precedenti
     clearAll(false);
 
     const arr = Array.from(list);
@@ -180,9 +191,9 @@ export default function LogViewer() {
         if (batch.length >= 2000) {
           const publish = batch.splice(0, batch.length);
           setAllLines((prev) => {
-            const merged = [...prev, ...publish];
+            const merged = dedupeById([...prev, ...publish]);
             if (merged.length > maxLines) {
-              merged.splice(0, merged.length - maxLines);
+              return merged.slice(-maxLines);
             }
             return merged;
           });
@@ -191,9 +202,9 @@ export default function LogViewer() {
       }
 
       setAllLines((prev) => {
-        const merged = [...prev, ...batch];
+        const merged = dedupeById([...prev, ...batch]);
         if (merged.length > maxLines) {
-          merged.splice(0, merged.length - maxLines);
+          return merged.slice(-maxLines);
         }
         return merged;
       });
@@ -201,7 +212,7 @@ export default function LogViewer() {
       pendingOlderRef.current = [...linesForFile];
       newParsedFiles.push({
         fileName,
-        lines: linesForFile, // mostra tutte le righe del file importato (nessun slice)
+        lines: linesForFile,
         totalLines,
       });
 
@@ -218,7 +229,6 @@ export default function LogViewer() {
     setIngesting(false);
     toast.success(`${arr.length} file caricati (stream)`);
 
-    // scroll automatico in fondo dopo import
     queueMicrotask(() => {
       scrollListToBottom();
       persistAll();
@@ -293,9 +303,14 @@ export default function LogViewer() {
     if (slice.length === 0) return;
 
     setAllLines((prev) => {
-      const merged = [...slice, ...prev];
+      // evita duplicati se queste righe sono già presenti
+      const prevIds = new Set(prev.map((l) => l.id));
+      const filteredSlice = slice.filter((l) => !prevIds.has(l.id));
+      if (filteredSlice.length === 0) return prev;
+
+      const merged = dedupeById([...filteredSlice, ...prev]);
       if (merged.length > maxLines) {
-        merged.splice(0, merged.length - maxLines);
+        return merged.slice(-maxLines);
       }
       return merged;
     });
@@ -323,10 +338,9 @@ export default function LogViewer() {
     const v = Math.max(1000, Math.min(500000, Math.floor(val)));
     setMaxLines(v);
     setAllLines((prev) => {
-      if (prev.length > v) {
-        return prev.slice(-v);
-      }
-      return prev;
+      const limited = prev.length > v ? prev.slice(-v) : prev;
+      // mantieni unico
+      return dedupeById(limited);
     });
     toast.message(`Max righe: ${v.toLocaleString()}`);
     queueMicrotask(() => persistAll());
@@ -341,13 +355,10 @@ export default function LogViewer() {
     return () => clearTimeout(h);
   }, [allLines, files, maxLines, persistAll]);
 
-  // Funzione per scorrere al fondo della lista
   const scrollListToBottom = () => {
-    // Prova 1: se il container esposto è presente, agganciati lì
     const container = (window as any).__LOG_LIST_CONTAINER__ as HTMLElement | undefined;
     const last = document.getElementById("log-last-row");
     if (container && last) {
-      // Scrolla in modo tale che l’ultima riga arrivi in fondo al viewport
       container.scrollTo({
         top: last.offsetTop - (container.clientHeight - last.clientHeight),
         behavior: "smooth",
@@ -355,7 +366,6 @@ export default function LogViewer() {
       return;
     }
 
-    // Fallback: prendi l’ultimo viewport scrollabile noto
     const scrollers = document.querySelectorAll('[data-radix-scroll-area-viewport], .overflow-auto');
     const el = (scrollers[scrollers.length - 1] as HTMLElement) || null;
     if (el) {
