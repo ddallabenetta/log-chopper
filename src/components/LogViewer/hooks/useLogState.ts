@@ -39,7 +39,7 @@ export function useLogState() {
   const [pendingJumpId, setPendingJumpId] = React.useState<string | null>(null);
   const [selectedTab, setSelectedTab] = React.useState<string>(ALL_TAB_ID);
 
-  // Manteniamo pageSize internamente per bilanciare caricamenti (non più mostrato in UI)
+  // Manteniamo pageSize internamente per bilanciare caricamenti (non mostrato in UI)
   const [pageSize, setPageSize] = React.useState<number>(() => {
     if (typeof window === "undefined") return 20000;
     const raw = window.localStorage.getItem(LS_PAGE_SIZE);
@@ -54,6 +54,10 @@ export function useLogState() {
 
   // Provider per fileName -> provider
   const providersRef = React.useRef<Map<string, LineProvider>>(new Map());
+
+  // Semplici guardie di caricamento per evitare richieste sovrapposte
+  const loadingUpRef = React.useRef(false);
+  const loadingDownRef = React.useRef(false);
 
   // Restore pinned e meta file
   React.useEffect(() => {
@@ -124,12 +128,11 @@ export function useLogState() {
 
         newStats.push({ fileName: f.name, totalLines: total, droppedLines: 0 });
       } else {
-        // SMALL: indicizzazione e salvataggio in IDB con provider idb
-        // Creiamo un indice leggero locale per contare le righe e poi salviamo in IDB in batch
+        // SMALL: indicizzazione e salvataggio in IDB, poi provider idb
         const largeTemp = await (await import("./large-file-index")).buildLargeFileIndex(f);
         const total = largeTemp.totalLines;
 
-        // Salva su IDB in blocchi per non saturare memoria
+        // Salva su IDB a blocchi
         const BLOCK = 20000;
         for (let from = 1; from <= total; from += BLOCK) {
           const to = Math.min(total, from + BLOCK - 1);
@@ -149,11 +152,12 @@ export function useLogState() {
           await updateFileTotal(f.name, to);
         }
 
-        // Ora usa il provider IDB
+        // Provider IDB e tail immediato
         const provider = await createIdbProvider(f.name);
         providersRef.current.set(f.name, provider);
 
         setFiles((prev) => upsertFile(prev, { fileName: f.name, lines: [], totalLines: total }));
+
         const tail = await provider.tail(Math.min(pageSize, total));
         setAllLines((prev) => {
           const others = prev.filter((l) => l.fileName !== f.name);
@@ -167,6 +171,7 @@ export function useLogState() {
     setIngestStats(newStats);
     setIngesting(false);
 
+    // Se eravamo su una tab vuota, rimuovila
     if (wasOnNewTab) {
       setFiles((prev) => prev.filter((f) => f.fileName !== selectedTab));
     }
@@ -242,49 +247,61 @@ export function useLogState() {
   };
 
   async function loadMoreUp() {
-    if (selectedTab === ALL_TAB_ID) return;
-    const prov = providersRef.current.get(selectedTab);
-    if (!prov) return;
+    if (loadingUpRef.current) return;
+    loadingUpRef.current = true;
+    try {
+      if (selectedTab === ALL_TAB_ID) return;
+      const prov = providersRef.current.get(selectedTab);
+      if (!prov) return;
 
-    const current = allLines.filter((l) => l.fileName === selectedTab);
-    const first = current[0];
-    const block = Math.max(1000, Math.min(pageSize, 20000));
-    const fromLine = first ? Math.max(1, first.lineNumber - block) : 1;
-    const toLine = first ? first.lineNumber - 1 : 0;
-    if (toLine < fromLine) return;
+      const current = allLines.filter((l) => l.fileName === selectedTab);
+      const first = current[0];
+      const block = Math.max(1000, Math.min(pageSize, 20000));
+      const fromLine = first ? Math.max(1, first.lineNumber - block) : 1;
+      const toLine = first ? first.lineNumber - 1 : 0;
+      if (toLine < fromLine) return;
 
-    const older = await prov.range(fromLine, toLine);
-    if (!older.length) return;
+      const older = await prov.range(fromLine, toLine);
+      if (!older.length) return;
 
-    setAllLines((prev) => {
-      const others = prev.filter((l) => l.fileName !== selectedTab);
-      const currentPrev = prev.filter((l) => l.fileName === selectedTab);
-      return dedupeById([...others, ...older, ...currentPrev]);
-    });
+      setAllLines((prev) => {
+        const others = prev.filter((l) => l.fileName !== selectedTab);
+        const currentPrev = prev.filter((l) => l.fileName === selectedTab);
+        return dedupeById([...others, ...older, ...currentPrev]);
+      });
+    } finally {
+      loadingUpRef.current = false;
+    }
   }
 
   async function loadMoreDown() {
-    if (selectedTab === ALL_TAB_ID) return;
-    const prov = providersRef.current.get(selectedTab);
-    if (!prov) return;
+    if (loadingDownRef.current) return;
+    loadingDownRef.current = true;
+    try {
+      if (selectedTab === ALL_TAB_ID) return;
+      const prov = providersRef.current.get(selectedTab);
+      if (!prov) return;
 
-    const total = await prov.totalLines();
-    if (total <= 0) return;
+      const total = await prov.totalLines();
+      if (total <= 0) return;
 
-    const current = allLines.filter((l) => l.fileName === selectedTab);
-    const last = current[current.length - 1];
-    const fromLine = last ? last.lineNumber + 1 : Math.max(1, total - pageSize + 1);
-    const toLine = Math.min(total, fromLine + Math.max(1000, Math.min(pageSize, 20000)) - 1);
-    if (toLine < fromLine) return;
+      const current = allLines.filter((l) => l.fileName === selectedTab);
+      const last = current[current.length - 1];
+      const fromLine = last ? last.lineNumber + 1 : Math.max(1, total - pageSize + 1);
+      const toLine = Math.min(total, fromLine + Math.max(1000, Math.min(pageSize, 20000)) - 1);
+      if (toLine < fromLine) return;
 
-    const newer = await prov.range(fromLine, toLine);
-    if (!newer.length) return;
+      const newer = await prov.range(fromLine, toLine);
+      if (!newer.length) return;
 
-    setAllLines((prev) => {
-      const others = prev.filter((l) => l.fileName !== selectedTab);
-      const currentPrev = prev.filter((l) => l.fileName === selectedTab);
-      return dedupeById([...others, ...currentPrev, ...newer]);
-    });
+      setAllLines((prev) => {
+        const others = prev.filter((l) => l.fileName !== selectedTab);
+        const currentPrev = prev.filter((l) => l.fileName === selectedTab);
+        return dedupeById([...others, ...currentPrev, ...newer]);
+      });
+    } finally {
+      loadingDownRef.current = false;
+    }
   }
 
   async function jumpToLine(n: number) {
