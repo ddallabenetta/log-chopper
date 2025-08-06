@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Upload, Regex, CaseSensitive, Pin, Filter, Navigation, ArrowDownToLine } from "lucide-react";
+import { Upload, Regex, CaseSensitive, Pin, Filter, Navigation, ArrowDownToLine, Rows3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -22,9 +22,9 @@ type Props = {
   onFilesSelected: (files: FileList) => void;
   pinnedIds?: string[];
   onJumpToId?: (id: string) => void;
-  // nuovi props per max righe
-  maxLines?: number;
-  onChangeMaxLines?: (v: number) => void;
+  // Nuove props per paginazione
+  pageSize?: number;
+  onChangePageSize?: (v: number) => void;
 };
 
 const LEVEL_OPTIONS = (t: (k: string) => string): Array<{ label: string; value: FilterConfig["level"] }> => [
@@ -57,8 +57,8 @@ export default function LogControls({
   onFilesSelected,
   pinnedIds = [],
   onJumpToId,
-  maxLines,
-  onChangeMaxLines,
+  pageSize = 20000,
+  onChangePageSize,
 }: Props) {
   const { t } = useI18n();
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -194,16 +194,17 @@ export default function LogControls({
         <div className="flex-1" />
 
         <div className="flex items-center gap-2">
-          {/* Max righe portato qui */}
+          {/* Righe per pagina (nuova configurazione) */}
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
-            {t("max_lines")}
+            <Rows3 className="h-4 w-4" />
+            Righe per pagina
             <Input
               type="number"
-              min={1000}
-              max={500000}
+              min={2000}
+              max={200000}
               step={1000}
-              value={maxLines ?? 50000}
-              onChange={(e) => onChangeMaxLines?.(Number(e.target.value))}
+              value={pageSize}
+              onChange={(e) => onChangePageSize?.(Number(e.target.value))}
               className="h-8 w-28"
             />
           </label>

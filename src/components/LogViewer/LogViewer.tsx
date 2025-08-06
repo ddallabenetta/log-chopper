@@ -48,6 +48,9 @@ export default function LogViewer() {
     addEmptyTab,
   } = useLogState();
 
+  // Nuovo stato locale per pageSize (verrà spostato nello store al prossimo passo)
+  const [pageSize, setPageSize] = React.useState<number>(20000);
+
   // Preferenza client per apertura chat
   const [ready, setReady] = React.useState(false);
   const [chatOpen, setChatOpen] = React.useState<boolean>(true);
@@ -151,8 +154,9 @@ export default function LogViewer() {
             onFilesSelected={(fl) => addFiles(fl)}
             pinnedIds={pinnedIdsFlat}
             onJumpToId={onJumpToId}
-            maxLines={maxLines}
-            onChangeMaxLines={onChangeMaxLines}
+            // Nuovi prop per paginazione
+            pageSize={pageSize}
+            onChangePageSize={setPageSize}
           />
         </div>
 
@@ -210,7 +214,6 @@ export default function LogViewer() {
                 >
                   <PanelRightOpen className="h-5 w-5" />
                 </Button>
-                {/* Rimosso il testo 'Assistant' quando sidebar chiusa */}
               </div>
             )}
           </div>
