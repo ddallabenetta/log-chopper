@@ -145,6 +145,13 @@ export default function LogList({
     onAfterJump && onAfterJump();
   }, [jumpToId, onAfterJump]);
 
+  // Espone globalmente il container per lo scroll “Vai in fondo”
+  React.useEffect(() => {
+    (window as any).__LOG_LIST_CONTAINER__ = containerRef.current;
+  }, []);
+
+  const lastId = filtered.length > 0 ? filtered[filtered.length - 1]?.id : null;
+
   return (
     <div className="rounded border bg-card h-full min-h-0 flex flex-col">
       <div
@@ -159,11 +166,13 @@ export default function LogList({
             {filtered.map((line, idx) => {
               const isEven = idx % 2 === 0;
               const renderKey = `${line.id}__${idx}`;
+              const isLast = lastId === line.id;
               return (
                 <div
                   key={renderKey}
                   className={isEven ? "bg-muted/30" : "bg-transparent"}
                   data-row-id={line.id}
+                  id={isLast ? "log-last-row" : undefined}
                 >
                   <LogLineItem
                     line={line}

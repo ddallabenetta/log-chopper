@@ -343,10 +343,23 @@ export default function LogViewer() {
 
   // Funzione per scorrere al fondo della lista
   const scrollListToBottom = () => {
+    // Prova 1: se il container esposto è presente, agganciati lì
+    const container = (window as any).__LOG_LIST_CONTAINER__ as HTMLElement | undefined;
+    const last = document.getElementById("log-last-row");
+    if (container && last) {
+      // Scrolla in modo tale che l’ultima riga arrivi in fondo al viewport
+      container.scrollTo({
+        top: last.offsetTop - (container.clientHeight - last.clientHeight),
+        behavior: "smooth",
+      });
+      return;
+    }
+
+    // Fallback: prendi l’ultimo viewport scrollabile noto
     const scrollers = document.querySelectorAll('[data-radix-scroll-area-viewport], .overflow-auto');
     const el = (scrollers[scrollers.length - 1] as HTMLElement) || null;
     if (el) {
-      el.scrollTop = el.scrollHeight - el.clientHeight;
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     }
   };
 
