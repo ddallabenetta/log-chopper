@@ -120,7 +120,6 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
 
   const copyToClipboard = async () => {
     if (!line) return;
-    // Se siamo in vista Pretty e abbiamo JSON, copia solo il JSON
     if (view === "pretty" && extraction.kind !== "none") {
       const jsonStr = prettyRef.current?.getFormattedJson?.() || (extraction as any).formatted || "";
       if (jsonStr) {
@@ -129,7 +128,6 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
         return;
       }
     }
-    // Altrimenti copia il contenuto completo della riga (fallback)
     await navigator.clipboard.writeText(line.content);
     toast.success("Contenuto copiato");
   };
@@ -148,7 +146,7 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
           <DialogTitle className="flex items-center gap-2">
             {line && <span className={`inline-block h-2.5 w-2.5 rounded-full ${levelDotClass(line.level)}`} aria-hidden />}
             <Badge variant="secondary">{line?.level}</Badge>
-            <span className="truncate">{line?.fileName}:{line?.lineNumber}</span>
+            {line && <span className="truncate">#{line.lineNumber}</span>}
           </DialogTitle>
         </DialogHeader>
 

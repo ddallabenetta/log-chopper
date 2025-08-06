@@ -67,14 +67,10 @@ export default function LogLineItem({
       <div className="px-3 py-1.5">
         <div className="flex items-start gap-3">
           {/* Meta */}
-          <div className="shrink-0 basis-56 max-w-[50%] text-xs text-muted-foreground tabular-nums font-mono overflow-hidden text-ellipsis">
+          <div className="shrink-0 basis-40 max-w-[50%] text-xs text-muted-foreground tabular-nums font-mono overflow-hidden text-ellipsis">
             <div className="flex items-center gap-2">
               <span className={`inline-block h-2.5 w-2.5 rounded-full ${levelDotClass(line.level)}`} aria-hidden />
-              <span className="text-foreground/80">{line.lineNumber}</span>
-              <span className="text-muted-foreground">•</span>
-              <span className="truncate" title={`${line.fileName}:${line.lineNumber}`}>
-                {line.fileName}:{line.lineNumber}
-              </span>
+              <span className="text-foreground/80">#{line.lineNumber}</span>
             </div>
           </div>
 
