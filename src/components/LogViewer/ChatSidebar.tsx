@@ -360,7 +360,7 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
   };
 
   return (
-    <div className={cn("h-full flex flex-col border-l bg-transparent relative", className)} style={{ width: open ? 460 : 56 }}>
+    <div className={cn("h-full flex flex-col border-l bg-transparent", className)} style={{ width: open ? 460 : 56 }}>
       <div className="p-2 h-full">
         <Card className="h-full flex flex-col overflow-hidden">
           <ChatHeader
@@ -370,7 +370,7 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
             onToggleSettings={() => setShowSettings((v) => !v)}
           />
 
-          {open && (
+          {open ? (
             <>
               {showSettings && (
                 <ChatSettings
@@ -401,25 +401,25 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
                 listRef={listRef}
               />
             </>
+          ) : (
+            <div className="flex-1 min-h-0 grid place-items-center p-4">
+              <button
+                onClick={() => setOpen(true)}
+                title="Apri chat"
+                className={[
+                  "inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm",
+                  "bg-primary text-primary-foreground hover:opacity-90",
+                  "shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                ].join(" ")}
+                aria-label="Apri chat"
+              >
+                <PanelRightOpen className="h-4 w-4" />
+                Apri chat
+              </button>
+            </div>
           )}
         </Card>
       </div>
-
-      {!open && (
-        <button
-          onClick={() => setOpen(true)}
-          title="Apri chat"
-          className={[
-            "fixed right-4 bottom-5 z-30 h-14 w-14 rounded-full",
-            "bg-primary text-primary-foreground",
-            "shadow-lg hover:shadow-xl transition-all",
-            "outline-none ring-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          ].join(" ")}
-          aria-label="Apri chat"
-        >
-          <PanelRightOpen className="h-6 w-6 mx-auto" />
-        </button>
-      )}
     </div>
   );
 }
