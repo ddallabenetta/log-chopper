@@ -47,21 +47,36 @@ export default function LogViewer() {
     handleLoadMoreTop,
     onChangeMaxLines,
     onJumpToId,
-    addEmptyTab, // new in hook
+    addEmptyTab,
   } = useLogState();
+
+  // Evita flicker: fino a quando non è il client, non mostriamo la chat
+  const [ready, setReady] = React.useState(false);
 
   // Inizializza leggendo subito localStorage (default true se non presente)
   const [chatOpen, setChatOpen] = React.useState<boolean>(() => {
     if (typeof window === "undefined") return true; // SSR: default aperto
     const raw = window.localStorage.getItem(LS_CHAT_OPEN_KEY);
     return raw === "0" ? false : true;
-  });
+    });
+
+  React.useEffect(() => {
+    // Siamo sul client: assicuriamoci di leggere ancora localStorage nel caso di navigazioni client
+    try {
+      const raw = window.localStorage.getItem(LS_CHAT_OPEN_KEY);
+      if (raw === "0") setChatOpen(false);
+      else if (raw === "1") setChatOpen(true);
+    } catch {}
+    setReady(true);
+  }, []);
 
   // Salva preferenza ogni volta che cambia
   React.useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(LS_CHAT_OPEN_KEY, chatOpen ? "1" : "0");
-  }, [chatOpen]);
+    if (!ready) return;
+    try {
+      window.localStorage.setItem(LS_CHAT_OPEN_KEY, chatOpen ? "1" : "0");
+    } catch {}
+  }, [chatOpen, ready]);
 
   const onDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -130,7 +145,6 @@ export default function LogViewer() {
           onNewTab={onNewTab}
         />
 
-        {/* Controlli filtro/ricerca e barra indicatori + max righe + vai in fondo */}
         <div className="shrink-0 p-3">
           <LogControls
             filter={filter}
@@ -181,9 +195,9 @@ export default function LogViewer() {
               )}
             </div>
 
-            {chatOpen ? (
+            {ready && chatOpen ? (
               <ChatSidebar lines={currentLines} pinnedIds={pinnedIdsFlat} filter={filter} />
-            ) : (
+            ) : ready && !chatOpen ? (
               <div className="h-full flex items-center">
                 <Button
                   variant="default"
@@ -199,6 +213,9 @@ export default function LogViewer() {
                   <span>Assistant</span>
                 </div>
               </div>
+            ) : (
+              // Non renderizzare nulla della chat finché non siamo pronti (evita flicker)
+              <div className="w-14 shrink-0" />
             )}
           </div>
         </div>
