@@ -15,13 +15,10 @@ type Props = {
   onAfterJump?: () => void;
 };
 
-// Item memoized
 const MemoLineItem = React.memo(LogLineItem);
 
 function buildMatcher(filter: FilterConfig): ((text: string) => { match: boolean; ranges: { start: number; end: number }[] }) {
-  if (!filter.query) {
-    return () => ({ match: true, ranges: [] });
-  }
+  if (!filter.query) return () => ({ match: true, ranges: [] });
   if (filter.mode === "regex") {
     try {
       const flags = filter.caseSensitive ? "g" : "gi";
@@ -57,7 +54,6 @@ function buildMatcher(filter: FilterConfig): ((text: string) => { match: boolean
   };
 }
 
-// throttle con rAF
 function useRafThrottle<T extends (...args: any[]) => void>(fn: T) {
   const ref = React.useRef<number | null>(null);
   const lastArgs = React.useRef<any[]>([]);
@@ -89,13 +85,11 @@ export default function LogList({
   const containerRef = React.useRef<HTMLDivElement | null>(null);
 
   const matcher = React.useMemo(() => buildMatcher(filter), [filter]);
-
   const passesLevel = React.useCallback(
     (lvl: LogLine["level"]) => (filter.level === "ALL" ? true : lvl === filter.level),
     [filter.level]
   );
 
-  // Filtro stabile
   const filtered = React.useMemo(() => {
     return lines.filter((l) => {
       if (showOnlyPinned) return pinned.has(l.id);
@@ -105,18 +99,24 @@ export default function LogList({
     });
   }, [lines, matcher, pinned, showOnlyPinned, passesLevel]);
 
-  // Virtualizzazione: altezza riga fissa
-  const ROW_H = 34; // fissa: deve essere >= minHeight del wrapper + padding
+  const ROW_H = 34;
   const OVERSCAN = 12;
 
   const [scrollTop, setScrollTop] = React.useState(0);
   const [viewportH, setViewportH] = React.useState(0);
 
+  // Stato "follow bottom": se true, quando arrivano nuove righe restiamo agganciati al fondo.
+  const [followBottom, setFollowBottom] = React.useState(true);
+
   const handleScroll = useRafThrottle(() => {
     const el = containerRef.current;
     if (!el) return;
     setScrollTop(el.scrollTop);
+    // aggiorna followBottom con soglia stretta (24px dal fondo)
+    const atBottom = el.scrollHeight - (el.scrollTop + el.clientHeight) <= 24;
+    setFollowBottom(atBottom);
   });
+
   const handleResize = useRafThrottle(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -135,7 +135,7 @@ export default function LogList({
     };
   }, [handleScroll, handleResize]);
 
-  // Primo popolamento: scroll in fondo
+  // Primo popolamento: vai in fondo una volta
   const didInitScrollBottomRef = React.useRef(false);
   React.useEffect(() => {
     const el = containerRef.current;
@@ -144,32 +144,40 @@ export default function LogList({
       requestAnimationFrame(() => {
         el.scrollTop = el.scrollHeight - el.clientHeight;
         didInitScrollBottomRef.current = true;
+        setFollowBottom(true);
       });
     }
   }, [filtered.length]);
 
-  // Segui il fondo su nuove righe
+  // Se arrivano nuove righe e siamo agganciati al fondo, rimani in fondo
   const prevLenRef = React.useRef(0);
   React.useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    if (filtered.length > prevLenRef.current) {
-      const atBottom = Math.abs(el.scrollTop + el.clientHeight - el.scrollHeight) < 8;
-      if (atBottom || prevLenRef.current === 0) {
-        requestAnimationFrame(() => {
-          el.scrollTop = el.scrollHeight - el.clientHeight;
-        });
-      }
+    if (filtered.length > prevLenRef.current && followBottom) {
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight - el.clientHeight;
+      });
     }
     prevLenRef.current = filtered.length;
-  }, [filtered.length]);
+  }, [filtered.length, followBottom]);
 
-  // Load more top
+  // Load more top con guard re-entrancy
+  const loadingTopRef = React.useRef(false);
   React.useEffect(() => {
     const el = containerRef.current;
     if (!el || !onLoadMoreTop) return;
     const onScrollTop = () => {
-      if (el.scrollTop < 50) onLoadMoreTop();
+      if (loadingTopRef.current) return;
+      if (el.scrollTop <= 40) {
+        loadingTopRef.current = true;
+        Promise.resolve(onLoadMoreTop()).finally(() => {
+          // lascia un frame per stabilizzare l'altezza
+          requestAnimationFrame(() => {
+            loadingTopRef.current = false;
+          });
+        });
+      }
     };
     el.addEventListener("scroll", onScrollTop, { passive: true });
     return () => el.removeEventListener("scroll", onScrollTop);
@@ -184,16 +192,17 @@ export default function LogList({
     if (target) {
       const top = target.offsetTop - el.clientHeight / 2;
       el.scrollTo({ top: Math.max(0, top) });
+      setFollowBottom(false);
     }
     onAfterJump && onAfterJump();
   }, [jumpToId, onAfterJump]);
 
-  // Espone container globalmente
+  // Espone per “Vai in fondo”
   React.useEffect(() => {
     (window as any).__LOG_LIST_CONTAINER__ = containerRef.current;
   }, []);
 
-  // Finestra virtualizzata
+  // Virtual window
   const total = filtered.length;
   const startIndex = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
   const visibleCount = Math.max(0, Math.ceil((viewportH || 1) / ROW_H) + OVERSCAN * 2);
@@ -205,7 +214,6 @@ export default function LogList({
   const slice = React.useMemo(() => filtered.slice(startIndex, endIndex), [filtered, startIndex, endIndex]);
   const lastId = slice.length > 0 ? slice[slice.length - 1]?.id : null;
 
-  // Highlight SOLO per la slice
   const sliceHighlightMap = React.useMemo(() => {
     const map = new Map<string, { start: number; end: number }[]>();
     if (!showOnlyPinned || filter.query) {
@@ -233,7 +241,7 @@ export default function LogList({
               const isLast = lastId === line.id;
               return (
                 <div
-                  key={line.id} // key stabile: solo id
+                  key={line.id}
                   data-row-id={line.id}
                   id={isLast ? "log-last-row" : undefined}
                   className="bg-transparent"
