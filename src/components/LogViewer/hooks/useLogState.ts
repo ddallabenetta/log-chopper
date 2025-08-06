@@ -3,16 +3,17 @@
 import * as React from "react";
 import { toast } from "sonner";
 import type { FilterConfig, LogLine, ParsedFile, LogLevel } from "../LogTypes";
+import { idbLoadState, idbUpdatePinned, idbClearAll } from "@/lib/idb";
+import { detectLevel, streamLines, dedupeById } from "./log-helpers";
 import {
-  idbLoadState,
-  idbAppendLogs,
-  idbGetLastN,
-  idbGetLogsByRange,
-  idbUpdatePinned,
-  idbClearAll,
-  idbUpdateFileTotal,
-  idbGetFilesMeta,
-} from "@/lib/idb";
+  TAIL_PREVIEW_DEFAULT,
+  saveBatchToDb,
+  updateFileTotal,
+  readTailPreview,
+  readRange,
+  getFileMetaTotal,
+  getAllFilesMeta,
+} from "./log-pagination";
 
 export type FileIngestStats = {
   fileName: string;
@@ -22,58 +23,12 @@ export type FileIngestStats = {
 
 export const ALL_TAB_ID = "__ALL__";
 
-// Config
-const TAIL_PREVIEW_DEFAULT = 50000;
 const LS_PAGE_SIZE = "logviewer.pageSize.v1";
-
-function detectLevel(text: string): LogLevel {
-  const t = text.toUpperCase();
-  if (/\bTRACE\b/.test(t)) return "TRACE";
-  if (/\bDEBUG\b/.test(t)) return "DEBUG";
-  if (/\bINFO\b/.test(t)) return "INFO";
-  if (/\bWARN(ING)?\b/.test(t)) return "WARN";
-  if (/\bERR(OR)?\b/.test(t)) return "ERROR";
-  return "OTHER";
-}
-
-async function* streamLines(file: File): AsyncGenerator<string, void, unknown> {
-  const reader = file.stream().getReader();
-  const decoder = new TextDecoder();
-  let { value, done } = await reader.read();
-  let chunk = value ? decoder.decode(value, { stream: true }) : "";
-  let buffer = "";
-  while (!done) {
-    buffer += chunk;
-    let idx: number;
-    while ((idx = buffer.indexOf("\n")) >= 0) {
-      const line = buffer.slice(0, idx);
-      yield line.replace(/\r$/, "");
-      buffer = buffer.slice(idx + 1);
-    }
-    ({ value, done } = await reader.read());
-    chunk = value ? decoder.decode(value, { stream: true }) : "";
-  }
-  const tail = decoder.decode();
-  if (tail) buffer += tail;
-  if (buffer.length > 0) {
-    yield buffer.replace(/\r$/, "");
-  }
-}
-
-function dedupeById<T extends { id: string }>(arr: T[]): T[] {
-  const seen = new Set<string>();
-  const out: T[] = [];
-  for (const item of arr) {
-    if (seen.has(item.id)) continue;
-    seen.add(item.id);
-    out.push(item);
-  }
-  return out;
-}
 
 let emptyTabCounter = 1;
 
 export function useLogState() {
+  // State
   const [files, setFiles] = React.useState<ParsedFile[]>([]);
   const [allLines, setAllLines] = React.useState<LogLine[]>([]);
   const [pinnedByFile, setPinnedByFile] = React.useState<Map<string, Set<string>>>(new Map());
@@ -85,7 +40,7 @@ export function useLogState() {
   });
   const [showOnlyPinned, setShowOnlyPinned] = React.useState(false);
 
-  const [maxLines, setMaxLines] = React.useState<number>(50000);
+  const [maxLines, setMaxLines] = React.useState<number>(50000); // legacy/compat
 
   const [isDragging, setIsDragging] = React.useState(false);
   const [ingesting, setIngesting] = React.useState(false);
@@ -93,7 +48,6 @@ export function useLogState() {
   const [isRestoring, setIsRestoring] = React.useState(false);
 
   const [pendingJumpId, setPendingJumpId] = React.useState<string | null>(null);
-
   const [selectedTab, setSelectedTab] = React.useState<string>(ALL_TAB_ID);
 
   const [pageSize, setPageSize] = React.useState<number>(() => {
@@ -108,11 +62,12 @@ export function useLogState() {
     } catch {}
   }, [pageSize]);
 
+  // Restore meta & pinned
   React.useEffect(() => {
     (async () => {
       setIsRestoring(true);
       const saved = await idbLoadState();
-      const metaFiles = await idbGetFilesMeta();
+      const metaFiles = await getAllFilesMeta();
 
       setFiles(metaFiles.map((m) => ({ fileName: m.fileName, lines: [], totalLines: m.totalLines })));
 
@@ -147,6 +102,7 @@ export function useLogState() {
     return id;
   }, []);
 
+  // Import with tail-first preview
   const addFiles = async (list: FileList | File[]) => {
     const arr = Array.from(list);
     if (arr.length === 0) return;
@@ -178,27 +134,11 @@ export function useLogState() {
         batch.push(lineObj);
 
         if (batch.length >= batchSize) {
-          await idbAppendLogs(
-            batch.map((l) => ({
-              id: l.id,
-              fileName: l.fileName,
-              lineNumber: l.lineNumber,
-              content: l.content,
-              level: l.level,
-            }))
-          );
+          await saveBatchToDb(batch);
           batch = [];
-          await idbUpdateFileTotal(fileName, totalLines);
+          await updateFileTotal(fileName, totalLines);
 
-          const preview = await idbGetLastN(fileName, TAIL_PREVIEW_DEFAULT);
-          const mapped = preview.map((l) => ({
-            id: l.id,
-            fileName: l.fileName,
-            lineNumber: l.lineNumber,
-            content: l.content,
-            level: (l.level as LogLevel) || "OTHER",
-          }));
-          mapped.sort((a, b) => a.lineNumber - b.lineNumber);
+          const mapped = await readTailPreview(fileName, TAIL_PREVIEW_DEFAULT);
 
           setAllLines((prev) => {
             if (selectedTab === ALL_TAB_ID || selectedTab === fileName) {
@@ -220,27 +160,11 @@ export function useLogState() {
       }
 
       if (batch.length > 0) {
-        await idbAppendLogs(
-          batch.map((l) => ({
-            id: l.id,
-            fileName: l.fileName,
-            lineNumber: l.lineNumber,
-            content: l.content,
-            level: l.level,
-          }))
-        );
-        await idbUpdateFileTotal(fileName, totalLines);
+        await saveBatchToDb(batch);
+        await updateFileTotal(fileName, totalLines);
       }
 
-      const preview = await idbGetLastN(fileName, TAIL_PREVIEW_DEFAULT);
-      const mapped = preview.map((l) => ({
-        id: l.id,
-        fileName: l.fileName,
-        lineNumber: l.lineNumber,
-        content: l.content,
-        level: (l.level as LogLevel) || "OTHER",
-      }));
-      mapped.sort((a, b) => a.lineNumber - b.lineNumber);
+      const mapped = await readTailPreview(fileName, TAIL_PREVIEW_DEFAULT);
 
       setAllLines((prev) => {
         if (selectedTab === ALL_TAB_ID || selectedTab === fileName) {
@@ -326,12 +250,7 @@ export function useLogState() {
     });
   };
 
-  const handleLoadMoreTop = async () => {
-    if (selectedTab === ALL_TAB_ID) return;
-    await loadMoreUp();
-  };
-
-  // Nuovo: carica blocco precedente rispetto alla prima riga visibile
+  // Paging helpers
   async function loadMoreUp() {
     if (selectedTab === ALL_TAB_ID) return;
     const current = allLines.filter((l) => l.fileName === selectedTab);
@@ -340,31 +259,20 @@ export function useLogState() {
     const fromLine = first ? Math.max(1, first.lineNumber - block) : 1;
     const toLine = first ? first.lineNumber - 1 : 0;
     if (toLine < fromLine) return;
-    const older = await idbGetLogsByRange(selectedTab, fromLine, toLine);
-    if (!older.length) return;
 
-    const mapped = older.map((l) => ({
-      id: l.id,
-      fileName: l.fileName,
-      lineNumber: l.lineNumber,
-      content: l.content,
-      level: (l.level as LogLevel) || "OTHER",
-    }));
-    mapped.sort((a, b) => a.lineNumber - b.lineNumber);
+    const older = await readRange(selectedTab, fromLine, toLine);
+    if (!older.length) return;
 
     setAllLines((prev) => {
       const others = prev.filter((l) => l.fileName !== selectedTab);
       const currentPrev = prev.filter((l) => l.fileName === selectedTab);
-      return dedupeById([...others, ...mapped, ...currentPrev]);
+      return dedupeById([...others, ...older, ...currentPrev]);
     });
   }
 
-  // Nuovo: carica blocco successivo rispetto all’ultima riga visibile
   async function loadMoreDown() {
     if (selectedTab === ALL_TAB_ID) return;
-    const meta = await idbGetFilesMeta();
-    const info = meta.find((m) => m.fileName === selectedTab);
-    const total = info?.totalLines ?? 0;
+    const total = await getFileMetaTotal(selectedTab);
     if (total <= 0) return;
 
     const current = allLines.filter((l) => l.fileName === selectedTab);
@@ -373,55 +281,33 @@ export function useLogState() {
     const toLine = Math.min(total, fromLine + Math.max(1000, Math.min(pageSize, 20000)) - 1);
     if (toLine < fromLine) return;
 
-    const newer = await idbGetLogsByRange(selectedTab, fromLine, toLine);
+    const newer = await readRange(selectedTab, fromLine, toLine);
     if (!newer.length) return;
-
-    const mapped = newer.map((l) => ({
-      id: l.id,
-      fileName: l.fileName,
-      lineNumber: l.lineNumber,
-      content: l.content,
-      level: (l.level as LogLevel) || "OTHER",
-    }));
-    mapped.sort((a, b) => a.lineNumber - b.lineNumber);
 
     setAllLines((prev) => {
       const others = prev.filter((l) => l.fileName !== selectedTab);
       const currentPrev = prev.filter((l) => l.fileName === selectedTab);
-      return dedupeById([...others, ...currentPrev, ...mapped]);
+      return dedupeById([...others, ...currentPrev, ...newer]);
     });
   }
 
-  // Nuovo: salta a una riga specifica caricando una finestra centrata
   async function jumpToLine(n: number) {
     if (selectedTab === ALL_TAB_ID) return;
-    const meta = await idbGetFilesMeta();
-    const info = meta.find((m) => m.fileName === selectedTab);
-    const total = info?.totalLines ?? 0;
+    const total = await getFileMetaTotal(selectedTab);
     if (total <= 0) return;
 
     const target = Math.max(1, Math.min(total, Math.floor(n)));
     const half = Math.floor(pageSize / 2);
     const from = Math.max(1, target - half);
     const to = Math.min(total, from + pageSize - 1);
-    const rows = await idbGetLogsByRange(selectedTab, from, to);
+    const rows = await readRange(selectedTab, from, to);
     if (!rows.length) return;
-
-    const mapped = rows.map((l) => ({
-      id: l.id,
-      fileName: l.fileName,
-      lineNumber: l.lineNumber,
-      content: l.content,
-      level: (l.level as LogLevel) || "OTHER",
-    }));
-    mapped.sort((a, b) => a.lineNumber - b.lineNumber);
 
     setAllLines((prev) => {
       const others = prev.filter((l) => l.fileName !== selectedTab);
-      return dedupeById([...others, ...mapped]);
+      return dedupeById([...others, ...rows]);
     });
 
-    // Scorri alla riga richiesta
     setPendingJumpId(`${selectedTab}:${target}`);
   }
 
@@ -429,14 +315,13 @@ export function useLogState() {
     setPendingJumpId(id);
   };
 
+  // Load a tail-aligned window on tab/pageSize change
   React.useEffect(() => {
     (async () => {
       const tab = selectedTab;
       if (!tab || tab === ALL_TAB_ID) return;
 
-      const meta = await idbGetFilesMeta();
-      const info = meta.find((m) => m.fileName === tab);
-      const total = info?.totalLines ?? 0;
+      const total = await getFileMetaTotal(tab);
       if (total <= 0) {
         setAllLines((prev) => prev.filter((l) => l.fileName !== tab));
         return;
@@ -445,24 +330,17 @@ export function useLogState() {
       const n = Math.max(1, Math.min(pageSize, total));
       const from = total - n + 1;
       const to = total;
-      const rows = await idbGetLogsByRange(tab, from, to);
-      const mapped = rows.map((l) => ({
-        id: l.id,
-        fileName: l.fileName,
-        lineNumber: l.lineNumber,
-        content: l.content,
-        level: (l.level as LogLevel) || "OTHER",
-      }));
-      mapped.sort((a, b) => a.lineNumber - b.lineNumber);
+      const rows = await readRange(tab, from, to);
 
       setAllLines((prev) => {
         const others = prev.filter((l) => l.fileName !== tab);
-        return dedupeById([...others, ...mapped]);
+        return dedupeById([...others, ...rows]);
       });
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTab, pageSize]);
 
+  // Derived
   const currentLines = React.useMemo<LogLine[]>(() => {
     if (selectedTab === ALL_TAB_ID) return allLines;
     return allLines.filter((l) => l.fileName === selectedTab);
@@ -480,8 +358,8 @@ export function useLogState() {
   const visibleCount = React.useMemo(() => {
     const pinned = currentPinnedSet;
     if (showOnlyPinned) return Array.from(pinned).length;
-    const passesLevel = (lvl: LogLevel) =>
-      filter.level === "ALL" ? true : lvl === filter.level;
+
+    const passesLevel = (lvl: LogLevel) => (filter.level === "ALL" ? true : lvl === filter.level);
 
     if (!filter.query) {
       return currentLines.reduce((acc, l) => (passesLevel(l.level) || pinned.has(l.id) ? acc + 1 : acc), 0);
@@ -492,15 +370,14 @@ export function useLogState() {
       if (filter.mode === "regex") {
         const re = new RegExp(filter.query, flags);
         return currentLines.reduce(
-          (acc, l) =>
-            ((passesLevel(l.level) && re.test(l.content)) || pinned.has(l.id) ? acc + 1 : acc),
+          (acc, l) => ((passesLevel(l.level) && re.test(l.content)) || pinned.has(l.id) ? acc + 1 : acc),
           0
         );
       }
       const needle = filter.caseSensitive ? filter.query : filter.query.toLowerCase();
       return currentLines.reduce((acc, l) => {
         const hay = filter.caseSensitive ? l.content : l.content.toLowerCase();
-        return ((passesLevel(l.level) && hay.includes(needle)) || pinned.has(l.id)) ? acc + 1 : acc;
+        return (passesLevel(l.level) && hay.includes(needle)) || pinned.has(l.id) ? acc + 1 : acc;
       }, 0);
     } catch {
       return Array.from(pinned).length;
@@ -557,15 +434,16 @@ export function useLogState() {
     closeFileTab,
     clearAll,
     togglePin,
-    handleLoadMoreTop,
     onChangeMaxLines,
     onJumpToId,
     addEmptyTab,
     pageSize,
     setPageSize,
-    // nuovi handler
+    // paging actions
     loadMoreUp,
     loadMoreDown,
     jumpToLine,
+    // compat handler used by LogList for top loading
+    handleLoadMoreTop: loadMoreUp,
   };
 }
