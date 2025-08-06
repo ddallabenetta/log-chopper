@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { useI18n } from "@/components/i18n/I18nProvider";
 
 type Props = {
@@ -11,11 +10,8 @@ type Props = {
   hasLines: boolean;
 };
 
-export default function TopBar({ maxLines, onChangeMaxLines, hasLines }: Props) {
+export default function TopBar({ maxLines, onChangeMaxLines }: Props) {
   const { t } = useI18n();
-  const scrollToBottom = () => {
-    (window as any).__LOG_LIST_SCROLL_TO_BOTTOM__?.();
-  };
 
   return (
     <div className="shrink-0 px-3 pb-2 text-xs text-muted-foreground flex items-center justify-between gap-2">
@@ -31,11 +27,6 @@ export default function TopBar({ maxLines, onChangeMaxLines, hasLines }: Props) 
           className="h-8 w-28"
         />
       </label>
-      {hasLines && (
-        <Button size="sm" variant="outline" onClick={scrollToBottom}>
-          {t("go_bottom")}
-        </Button>
-      )}
       <div className="flex-1" />
     </div>
   );

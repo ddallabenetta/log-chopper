@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Upload, Regex, CaseSensitive, Pin, Filter, Navigation } from "lucide-react";
+import { Upload, Regex, CaseSensitive, Pin, Filter, Navigation, ArrowDownToLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -93,6 +93,10 @@ export default function LogControls({
     return Array.from(s).sort();
   }, [pinnedIds]);
 
+  const goBottom = () => {
+    (window as any).__LOG_LIST_SCROLL_TO_BOTTOM__?.();
+  };
+
   return (
     <div className="w-full space-y-3">
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
@@ -179,6 +183,19 @@ export default function LogControls({
         <Badge variant="secondary">{t("totals")}: {totalCount}</Badge>
         <Badge>{t("visible")}: {visibleCount}</Badge>
         <Badge variant="outline">{t("pinned")}: {pinnedCount}</Badge>
+
+        <div className="ml-auto">
+          <Button
+            variant="default"
+            size="sm"
+            className="h-8 gap-2 shadow hover:shadow-md transition-shadow"
+            onClick={goBottom}
+            title={t("go_bottom")}
+          >
+            <ArrowDownToLine className="h-4 w-4" />
+            <span className="hidden sm:inline">{t("go_bottom")}</span>
+          </Button>
+        </div>
       </div>
 
       {uniquePinned.length > 0 && (
