@@ -83,7 +83,7 @@ export function useLogState() {
 
   const [selectedTab, setSelectedTab] = React.useState<string>(ALL_TAB_ID);
 
-  // Restore
+  // Restore stato precedente
   React.useEffect(() => {
     (async () => {
       setIsRestoring(true);
@@ -163,23 +163,26 @@ export function useLogState() {
   const addEmptyTab = React.useCallback(() => {
     const id = `Nuova-${emptyTabCounter++}`;
     setFiles((prev) => {
-      // se esiste già, non duplicare
       if (prev.some((f) => f.fileName === id)) return prev;
       return [...prev, { fileName: id, lines: [], totalLines: 0 }];
     });
     return id;
   }, []);
 
-  // Ingest new files
+  // Caricamento file: seleziona l’ultimo caricato, ed eventualmente rimuovi la tab Nuova-* attiva
   const addFiles = async (list: FileList | File[]) => {
     const arr = Array.from(list);
     if (arr.length === 0) return;
     setIngesting(true);
 
+    const wasOnNewTab = selectedTab !== ALL_TAB_ID && selectedTab.startsWith("Nuova-");
+
     const newStats: FileIngestStats[] = [];
+    const importedNames: string[] = [];
 
     for (const f of arr) {
       const fileName = f.name;
+      importedNames.push(fileName);
       let totalLines = 0;
       let dropped = 0;
       const linesForFile: LogLine[] = [];
@@ -237,6 +240,18 @@ export function useLogState() {
 
     setIngestStats(newStats);
     setIngesting(false);
+
+    // Se ero su una tab Nuova-*, rimuovila
+    if (wasOnNewTab) {
+      setFiles((prev) => prev.filter((f) => f.fileName !== selectedTab));
+    }
+
+    // Seleziona l’ultimo file importato
+    const lastImported = importedNames[importedNames.length - 1];
+    if (lastImported) {
+      setSelectedTab(lastImported);
+    }
+
     toast.success(`${arr.length} file caricati`);
     queueMicrotask(() => {
       (window as any).__LOG_LIST_SCROLL_TO_BOTTOM__?.();
@@ -244,7 +259,6 @@ export function useLogState() {
     });
   };
 
-  // Close a file tab
   const closeFileTab = (fileName: string) => {
     if (!fileName || fileName === ALL_TAB_ID) return;
 
@@ -262,7 +276,6 @@ export function useLogState() {
     queueMicrotask(() => persistAll());
   };
 
-  // Clear all
   const clearAll = (showToast = true) => {
     setFiles([]);
     setAllLines([]);

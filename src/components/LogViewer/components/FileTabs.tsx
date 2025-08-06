@@ -56,13 +56,12 @@ export default function FileTabs({ tabs, selected, onSelect, onClose, onNewTab }
         {onNewTab && (
           <Button
             variant="secondary"
-            size="sm"
-            className="h-7 gap-1"
+            size="icon"
+            className="h-7 w-7"
             onClick={onNewTab}
             title="Nuova tab"
           >
-            <Plus className="h-3.5 w-3.5" />
-            +
+            <Plus className="h-4 w-4" />
           </Button>
         )}
       </div>
