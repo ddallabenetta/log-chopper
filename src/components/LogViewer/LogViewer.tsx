@@ -51,7 +51,6 @@ type FileIngestStats = {
   droppedLines: number;
 };
 
-// Utility: deduplica per id preservando l'ordine dell'array (prima occorrenza vince)
 function dedupeById<T extends { id: string }>(arr: T[]): T[] {
   const seen = new Set<string>();
   const out: T[] = [];
@@ -63,10 +62,13 @@ function dedupeById<T extends { id: string }>(arr: T[]): T[] {
   return out;
 }
 
+const ALL_TAB_ID = "__ALL__";
+
 export default function LogViewer() {
   const [files, setFiles] = React.useState<ParsedFile[]>([]);
   const [allLines, setAllLines] = React.useState<LogLine[]>([]);
-  const [pinned, setPinned] = React.useState<Set<string>>(new Set());
+  // pin per-file: mappa fileName -> Set di id
+  const [pinnedByFile, setPinnedByFile] = React.useState<Map<string, Set<string>>>(new Map());
   const [filter, setFilter] = React.useState<FilterConfig>({
     query: "",
     mode: "text",
@@ -85,7 +87,9 @@ export default function LogViewer() {
   const [pendingJumpId, setPendingJumpId] = React.useState<string | null>(null);
   const pendingOlderRef = React.useRef<LogLine[]>([]);
 
-  // Caricamento stato persistito: ripristina e ORDINA per fileName + lineNumber
+  // tab selezionata
+  const [selectedTab, setSelectedTab] = React.useState<string>(ALL_TAB_ID);
+
   React.useEffect(() => {
     (async () => {
       setIsRestoring(true);
@@ -104,12 +108,9 @@ export default function LogViewer() {
           return a.fileName.localeCompare(b.fileName);
         });
 
-        // dedup a ripristino nel caso l'idb contenga doppioni
         const uniqueRestored = dedupeById(restoredLines);
-
         setAllLines(uniqueRestored);
 
-        // Ricostruisci files
         const byFile = new Map<string, LogLine[]>();
         for (const l of uniqueRestored) {
           const arr = byFile.get(l.fileName);
@@ -123,7 +124,17 @@ export default function LogViewer() {
         }));
         setFiles(restoredFiles);
 
-        setPinned(new Set(saved.pinnedIds));
+        // Ricostruisce pin unici e li associa al file corrispondente
+        const nextPinned = new Map<string, Set<string>>();
+        for (const id of saved.pinnedIds) {
+          const line = uniqueRestored.find((l) => l.id === id);
+          if (!line) continue;
+          const set = nextPinned.get(line.fileName) ?? new Set<string>();
+          set.add(id);
+          nextPinned.set(line.fileName, set);
+        }
+        setPinnedByFile(nextPinned);
+
         setMaxLines(saved.maxLines || 50000);
 
         pendingOlderRef.current = uniqueRestored.slice();
@@ -142,7 +153,8 @@ export default function LogViewer() {
       content: l.content,
       level: l.level,
     }));
-    const pinnedIds = Array.from(pinned);
+    // flat dei pin
+    const pinnedIds = Array.from(pinnedByFile.values()).flatMap((s) => Array.from(s));
     const metaFiles = files.map((f) => ({ fileName: f.fileName, totalLines: f.totalLines }));
     await idbSaveState({
       allLines: allLinesIdb,
@@ -150,7 +162,7 @@ export default function LogViewer() {
       files: metaFiles,
       maxLines,
     });
-  }, [allLines, pinned, files, maxLines]);
+  }, [allLines, pinnedByFile, files, maxLines]);
 
   const addFiles = async (list: FileList | File[]) => {
     clearAll(false);
@@ -161,6 +173,9 @@ export default function LogViewer() {
     const newStats: FileIngestStats[] = [];
     const newParsedFiles: ParsedFile[] = [];
     const newLinesAll: LogLine[] = [];
+
+    // reset pin per nuovi file
+    setPinnedByFile(new Map());
 
     for (const f of arr) {
       const fileName = f.name;
@@ -225,6 +240,8 @@ export default function LogViewer() {
 
     setFiles(newParsedFiles);
     setIngestStats(newStats);
+    // seleziona la prima tab file, ma manteniamo anche la tab "Tutti"
+    setSelectedTab(ALL_TAB_ID);
 
     setIngesting(false);
     toast.success(`${arr.length} file caricati (stream)`);
@@ -240,12 +257,17 @@ export default function LogViewer() {
   };
 
   const togglePin = (id: string) => {
-    setPinned((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      const pinnedIds = Array.from(next);
-      idbUpdatePinned(pinnedIds);
+    const target = allLines.find((l) => l.id === id);
+    if (!target) return;
+    setPinnedByFile((prev) => {
+      const next = new Map(prev);
+      const set = new Set(next.get(target.fileName) ?? new Set<string>());
+      if (set.has(id)) set.delete(id);
+      else set.add(id);
+      next.set(target.fileName, set);
+      // salva piatto in idb anche come lista unica
+      const flat = Array.from(next.values()).flatMap((s) => Array.from(s));
+      idbUpdatePinned(flat);
       return next;
     });
   };
@@ -253,45 +275,64 @@ export default function LogViewer() {
   const clearAll = (showToast = true) => {
     setFiles([]);
     setAllLines([]);
-    setPinned(new Set());
+    setPinnedByFile(new Map());
     setFilter({ query: "", mode: "text", caseSensitive: false, level: "ALL" });
     setShowOnlyPinned(false);
     setIngestStats([]);
+    setSelectedTab(ALL_TAB_ID);
     pendingOlderRef.current = [];
     if (showToast) toast.message("Pulito");
     import("@/lib/idb").then((m) => m.idbClearAll());
   };
 
-  const totalCount = allLines.length;
+  // Filtra righe in base alla tab selezionata
+  const currentLines = React.useMemo<LogLine[]>(() => {
+    if (selectedTab === ALL_TAB_ID) return allLines;
+    return allLines.filter((l) => l.fileName === selectedTab);
+  }, [selectedTab, allLines]);
+
+  // Set dei pin corrente
+  const currentPinnedSet = React.useMemo<Set<string>>(() => {
+    if (selectedTab === ALL_TAB_ID) {
+      // in vista tutti, consideriamo pin di tutti i file
+      const s = new Set<string>();
+      for (const set of pinnedByFile.values()) for (const id of set) s.add(id);
+      return s;
+    }
+    return pinnedByFile.get(selectedTab) ?? new Set<string>();
+  }, [pinnedByFile, selectedTab]);
+
+  const totalCount = currentLines.length;
 
   const visibleCount = React.useMemo(() => {
+    const pinned = currentPinnedSet;
     if (showOnlyPinned) return Array.from(pinned).length;
     const passesLevel = (lvl: LogLevel) =>
       filter.level === "ALL" ? true : lvl === filter.level;
 
     if (!filter.query) {
-      return allLines.reduce((acc, l) => (passesLevel(l.level) || pinned.has(l.id) ? acc + 1 : acc), 0);
+      return currentLines.reduce((acc, l) => (passesLevel(l.level) || pinned.has(l.id) ? acc + 1 : acc), 0);
     }
 
     const flags = filter.caseSensitive ? "" : "i";
     try {
       if (filter.mode === "regex") {
         const re = new RegExp(filter.query, flags);
-        return allLines.reduce(
+        return currentLines.reduce(
           (acc, l) =>
             ((passesLevel(l.level) && re.test(l.content)) || pinned.has(l.id) ? acc + 1 : acc),
           0
         );
       }
       const needle = filter.caseSensitive ? filter.query : filter.query.toLowerCase();
-      return allLines.reduce((acc, l) => {
+      return currentLines.reduce((acc, l) => {
         const hay = filter.caseSensitive ? l.content : l.content.toLowerCase();
         return ((passesLevel(l.level) && hay.includes(needle)) || pinned.has(l.id)) ? acc + 1 : acc;
       }, 0);
     } catch {
       return Array.from(pinned).length;
     }
-  }, [allLines, filter, pinned, showOnlyPinned]);
+  }, [currentLines, filter, currentPinnedSet, showOnlyPinned]);
 
   const handleLoadMoreTop = () => {
     if (pendingOlderRef.current.length === 0) return;
@@ -303,7 +344,6 @@ export default function LogViewer() {
     if (slice.length === 0) return;
 
     setAllLines((prev) => {
-      // evita duplicati se queste righe sono già presenti
       const prevIds = new Set(prev.map((l) => l.id));
       const filteredSlice = slice.filter((l) => !prevIds.has(l.id));
       if (filteredSlice.length === 0) return prev;
@@ -339,21 +379,27 @@ export default function LogViewer() {
     setMaxLines(v);
     setAllLines((prev) => {
       const limited = prev.length > v ? prev.slice(-v) : prev;
-      // mantieni unico
       return dedupeById(limited);
     });
     toast.message(`Max righe: ${v.toLocaleString()}`);
     queueMicrotask(() => persistAll());
   };
 
-  const pinnedIds = React.useMemo(() => Array.from(pinned), [pinned]);
+  const pinnedIdsFlat = React.useMemo(() => {
+    if (selectedTab === ALL_TAB_ID) {
+      const s = new Set<string>();
+      for (const set of pinnedByFile.values()) for (const id of set) s.add(id);
+      return Array.from(s);
+    }
+    return Array.from(currentPinnedSet);
+  }, [currentPinnedSet, pinnedByFile, selectedTab]);
 
   React.useEffect(() => {
     const h = setTimeout(() => {
       void persistAll();
     }, 500);
     return () => clearTimeout(h);
-  }, [allLines, files, maxLines, persistAll]);
+  }, [allLines, files, maxLines, pinnedByFile, persistAll]);
 
   const scrollListToBottom = () => {
     const container = (window as any).__LOG_LIST_CONTAINER__ as HTMLElement | undefined;
@@ -371,6 +417,24 @@ export default function LogViewer() {
     if (el) {
       el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     }
+  };
+
+  const fileTabs = React.useMemo(() => {
+    const entries = files.map((f) => ({
+      id: f.fileName,
+      label: f.fileName,
+      count: f.totalLines,
+    }));
+    return [{ id: ALL_TAB_ID, label: "Tutti", count: allLines.length }, ...entries];
+  }, [files, allLines.length]);
+
+  const onJumpToId = (id: string) => {
+    // Cambia tab al file di appartenenza se necessario
+    const line = allLines.find((l) => l.id === id);
+    if (line && selectedTab !== ALL_TAB_ID && line.fileName !== selectedTab) {
+      setSelectedTab(line.fileName);
+    }
+    setPendingJumpId(id);
   };
 
   return (
@@ -392,16 +456,39 @@ export default function LogViewer() {
           <LogControls
             filter={filter}
             onFilterChange={setFilter}
-            pinnedCount={pinned.size}
+            pinnedCount={currentPinnedSet.size}
             visibleCount={visibleCount}
             totalCount={totalCount}
             showOnlyPinned={showOnlyPinned}
             onToggleShowOnlyPinned={() => setShowOnlyPinned((v) => !v)}
             onFilesSelected={handleFilesSelected}
             onClearAll={clearAll}
-            pinnedIds={pinnedIds}
-            onJumpToId={(id) => setPendingJumpId(id)}
+            pinnedIds={pinnedIdsFlat}
+            onJumpToId={onJumpToId}
           />
+        </div>
+
+        {/* Tabs per file */}
+        <div className="px-3 pb-2 border-b">
+          <div className="flex items-center gap-1 overflow-auto">
+            {fileTabs.map((t) => {
+              const active = t.id === selectedTab;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setSelectedTab(t.id)}
+                  className={[
+                    "px-3 py-1.5 rounded-t-md border-b-2 text-sm whitespace-nowrap",
+                    active ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+                  ].join(" ")}
+                  title={t.label}
+                >
+                  <span className="font-medium">{t.label}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">({t.count})</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="shrink-0 px-3 pb-2 text-xs text-muted-foreground flex items-center justify-between gap-2">
@@ -417,7 +504,7 @@ export default function LogViewer() {
               className="h-8 w-28"
             />
           </label>
-          {allLines.length > 0 && (
+          {currentLines.length > 0 && (
             <Button size="sm" variant="outline" onClick={scrollListToBottom}>
               Vai in fondo
             </Button>
@@ -446,8 +533,8 @@ export default function LogViewer() {
           <div className="flex-1 min-w-0 overflow-hidden flex">
             <div className="flex-1 min-w-0 overflow-auto">
               <LogList
-                lines={allLines}
-                pinned={pinned}
+                lines={currentLines}
+                pinned={currentPinnedSet}
                 onTogglePin={togglePin}
                 filter={filter}
                 showOnlyPinned={showOnlyPinned}
@@ -456,7 +543,7 @@ export default function LogViewer() {
                 onAfterJump={() => setPendingJumpId(null)}
               />
             </div>
-            <ChatSidebar lines={allLines} pinnedIds={pinnedIds} filter={filter} />
+            <ChatSidebar lines={currentLines} pinnedIds={pinnedIdsFlat} filter={filter} />
           </div>
         </div>
       </CardContent>
