@@ -20,7 +20,6 @@ type Props = {
   showOnlyPinned: boolean;
   onToggleShowOnlyPinned: () => void;
   onFilesSelected: (files: FileList) => void;
-  onClearAll: () => void;
   pinnedIds?: string[];
   onJumpToId?: (id: string) => void;
 };
@@ -53,7 +52,6 @@ export default function LogControls({
   showOnlyPinned,
   onToggleShowOnlyPinned,
   onFilesSelected,
-  onClearAll,
   pinnedIds = [],
   onJumpToId,
 }: Props) {
@@ -114,9 +112,6 @@ export default function LogControls({
           >
             <Upload className="mr-2 h-4 w-4" />
             {t("upload_logs")}
-          </Button>
-          <Button variant="secondary" onClick={onClearAll}>
-            {t("clear")}
           </Button>
         </div>
 

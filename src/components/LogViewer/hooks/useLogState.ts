@@ -58,6 +58,8 @@ function dedupeById<T extends { id: string }>(arr: T[]): T[] {
   return out;
 }
 
+let emptyTabCounter = 1;
+
 export function useLogState() {
   const [files, setFiles] = React.useState<ParsedFile[]>([]);
   const [allLines, setAllLines] = React.useState<LogLine[]>([]);
@@ -129,8 +131,6 @@ export function useLogState() {
         setMaxLines(saved.maxLines || 50000);
 
         pendingOlderRef.current = uniqueRestored.slice();
-
-        toast.message(`Log ripristinati (${uniqueRestored.length.toLocaleString()} righe)`);
       }
       setIsRestoring(false);
     })();
@@ -159,13 +159,23 @@ export function useLogState() {
     return () => clearTimeout(h);
   }, [allLines, files, maxLines, pinnedByFile, persistAll]);
 
+  // Aggiungi tab vuota
+  const addEmptyTab = React.useCallback(() => {
+    const id = `Nuova-${emptyTabCounter++}`;
+    setFiles((prev) => {
+      // se esiste già, non duplicare
+      if (prev.some((f) => f.fileName === id)) return prev;
+      return [...prev, { fileName: id, lines: [], totalLines: 0 }];
+    });
+    return id;
+  }, []);
+
   // Ingest new files
   const addFiles = async (list: FileList | File[]) => {
     const arr = Array.from(list);
     if (arr.length === 0) return;
     setIngesting(true);
 
-    const tempByFile = new Map<string, LogLine[]>();
     const newStats: FileIngestStats[] = [];
 
     for (const f of arr) {
@@ -211,8 +221,6 @@ export function useLogState() {
         }
         return merged;
       });
-
-      tempByFile.set(fileName, linesForFile);
 
       setFiles((prev) => {
         const idx = prev.findIndex((p) => p.fileName === fileName);
@@ -417,5 +425,6 @@ export function useLogState() {
     handleLoadMoreTop,
     onChangeMaxLines,
     onJumpToId,
+    addEmptyTab,
   };
 }

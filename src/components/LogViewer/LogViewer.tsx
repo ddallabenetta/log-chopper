@@ -6,12 +6,18 @@ import { toast } from "sonner";
 import LogControls from "./LogControls";
 import LogList from "./LogList";
 import ChatSidebar from "./ChatSidebar";
-import { useLogState } from "./hooks/useLogState";
-import FileTabs from "./components/FileTabs";
+import { useLogState, ALL_TAB_ID } from "./hooks/useLogState";
+import FileTabs, { type Tab as FileTab } from "./components/FileTabs";
 import TopBar from "./components/TopBar";
 import DragOverlay from "./components/DragOverlay";
+import { Button } from "@/components/ui/button";
+import { Bot, PanelRightOpen } from "lucide-react";
+import { useI18n } from "@/components/i18n/I18nProvider";
+
+const LS_CHAT_OPEN_KEY = "logviewer.chat.open.v1";
 
 export default function LogViewer() {
+  const { t } = useI18n();
   const {
     // state
     files,
@@ -42,7 +48,18 @@ export default function LogViewer() {
     handleLoadMoreTop,
     onChangeMaxLines,
     onJumpToId,
+    addEmptyTab, // new in hook
   } = useLogState();
+
+  // Ricorda apertura/chiusura chat
+  const [chatOpen, setChatOpen] = React.useState(true);
+  React.useEffect(() => {
+    const raw = localStorage.getItem(LS_CHAT_OPEN_KEY);
+    setChatOpen(raw === "0" ? false : true);
+  }, []);
+  React.useEffect(() => {
+    localStorage.setItem(LS_CHAT_OPEN_KEY, chatOpen ? "1" : "0");
+  }, [chatOpen]);
 
   const onDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -66,6 +83,30 @@ export default function LogViewer() {
     if (ingesting) toast.message("Import in corso…");
   }, [ingesting]);
 
+  const onNewTab = () => {
+    const id = addEmptyTab();
+    setSelectedTab(id);
+  };
+
+  const handleCloseTab = (id: string) => {
+    // se è l'ultima tab “file” e chiudo, pulisco tutto
+    const fileOnly = fileTabs.filter((t) => t.id !== ALL_TAB_ID);
+    if (fileOnly.length <= 1 && id !== ALL_TAB_ID) {
+      clearAll(false);
+      setSelectedTab(ALL_TAB_ID);
+      toast.message("Pulito");
+      return;
+    }
+    closeFileTab(id);
+  };
+
+  const tabsForRender: FileTab[] = fileTabs;
+
+  const showEmptyHint =
+    selectedTab !== ALL_TAB_ID &&
+    currentLines.length === 0 &&
+    files.find((f) => f.fileName === selectedTab)?.totalLines === 0;
+
   return (
     <Card className="w-screen h-[calc(100vh-56px)] max-w-none rounded-none border-0 flex flex-col overflow-hidden">
       {isRestoring && (
@@ -76,11 +117,27 @@ export default function LogViewer() {
               0% { transform: translateX(-100%); }
               100% { transform: translateX(100%); }
             }
-            div[style*="shimmer"] {}
           `}</style>
         </div>
       )}
       <CardContent className="flex-1 min-h-0 flex flex-col overflow-hidden p-0">
+        {/* Tabs in alto */}
+        <FileTabs
+          tabs={tabsForRender}
+          selected={selectedTab}
+          onSelect={setSelectedTab}
+          onClose={handleCloseTab}
+          onNewTab={onNewTab}
+        />
+
+        {/* Barra superiore con max lines e go bottom */}
+        <TopBar
+          maxLines={maxLines}
+          onChangeMaxLines={onChangeMaxLines}
+          hasLines={currentLines.length > 0}
+        />
+
+        {/* Controlli filtro/ricerca sotto le tabs */}
         <div className="shrink-0 p-3">
           <LogControls
             filter={filter}
@@ -91,24 +148,11 @@ export default function LogViewer() {
             showOnlyPinned={showOnlyPinned}
             onToggleShowOnlyPinned={() => setShowOnlyPinned((v) => !v)}
             onFilesSelected={(fl) => addFiles(fl)}
-            onClearAll={clearAll}
+            // rimosso bottone svuota: non passiamo più onClearAll
             pinnedIds={pinnedIdsFlat}
             onJumpToId={onJumpToId}
           />
         </div>
-
-        <FileTabs
-          tabs={fileTabs}
-          selected={selectedTab}
-          onSelect={setSelectedTab}
-          onClose={closeFileTab}
-        />
-
-        <TopBar
-          maxLines={maxLines}
-          onChangeMaxLines={onChangeMaxLines}
-          hasLines={currentLines.length > 0}
-        />
 
         <div
           className="flex-1 min-h-0 rounded-none relative overflow-hidden flex"
@@ -118,20 +162,51 @@ export default function LogViewer() {
         >
           {isDragging && <DragOverlay />}
 
-          <div className="flex-1 min-w-0 overflow-hidden flex">
-            <div className="flex-1 min-w-0 overflow-auto">
-              <LogList
-                lines={currentLines}
-                pinned={currentPinnedSet}
-                onTogglePin={togglePin}
-                filter={filter}
-                showOnlyPinned={showOnlyPinned}
-                onLoadMoreTop={handleLoadMoreTop}
-                jumpToId={pendingJumpId}
-                onAfterJump={() => setPendingJumpId(null)}
-              />
+          <div className="flex-1 min-w-0 overflow-hidden flex relative">
+            <div className="flex-1 min-w-0 overflow-auto relative">
+              {showEmptyHint ? (
+                <div className="h-full grid place-items-center p-6">
+                  <div className="rounded-lg border bg-card px-6 py-5 text-sm text-center space-y-2">
+                    <div className="text-base font-medium">{t("drop_files_here")}</div>
+                    <div className="text-xs text-muted-foreground">
+                      Oppure clicca “{t("upload_logs")}” per scegliere un file dal tuo PC.
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <LogList
+                  lines={currentLines}
+                  pinned={currentPinnedSet}
+                  onTogglePin={togglePin}
+                  filter={filter}
+                  showOnlyPinned={showOnlyPinned}
+                  onLoadMoreTop={handleLoadMoreTop}
+                  jumpToId={pendingJumpId}
+                  onAfterJump={() => setPendingJumpId(null)}
+                />
+              )}
             </div>
-            <ChatSidebar lines={currentLines} pinnedIds={pinnedIdsFlat} filter={filter} />
+
+            {/* Sidebar Chat opzionale */}
+            {chatOpen ? (
+              <ChatSidebar lines={currentLines} pinnedIds={pinnedIdsFlat} filter={filter} />
+            ) : (
+              <div className="h-full flex items-center">
+                <Button
+                  variant="default"
+                  size="icon"
+                  className="mx-2 rounded-full shadow hover:shadow-md transition-all"
+                  title="Apri assistant"
+                  onClick={() => setChatOpen(true)}
+                >
+                  <PanelRightOpen className="h-5 w-5" />
+                </Button>
+                <div className="mr-2 hidden md:flex items-center gap-1 text-xs text-muted-foreground">
+                  <Bot className="h-3.5 w-3.5" />
+                  <span>Assistant</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
