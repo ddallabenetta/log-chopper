@@ -210,10 +210,7 @@ export default function LogViewer() {
                 >
                   <PanelRightOpen className="h-5 w-5" />
                 </Button>
-                <div className="mr-2 hidden md:flex items-center gap-1 text-xs text-muted-foreground">
-                  <Bot className="h-3.5 w-3.5" />
-                  <span>Assistant</span>
-                </div>
+                {/* Rimosso il testo 'Assistant' quando sidebar chiusa */}
               </div>
             )}
           </div>

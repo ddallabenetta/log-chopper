@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Send, Bot, PanelRightClose, PanelRightOpen, Settings2, Loader2, Scissors, Server } from "lucide-react";
+import { Send, Bot, PanelRightClose, PanelRightOpen, Settings2, Loader2, Scissors, Server, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -70,6 +70,22 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
 
   const abortRef = React.useRef<AbortController | null>(null);
   const listRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Toggle impostazioni (persistenza)
+  const LS_SETTINGS_OPEN = "logviewer.chat.settings.open";
+  const [showSettings, setShowSettings] = React.useState(false);
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LS_SETTINGS_OPEN);
+      if (raw === "1") setShowSettings(true);
+      else setShowSettings(false); // default nascosto
+    } catch {}
+  }, []);
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(LS_SETTINGS_OPEN, showSettings ? "1" : "0");
+    } catch {}
+  }, [showSettings]);
 
   // Compression config (dichiarata PRIMA di effetti/callback che la usano)
   type CompressionConfig = {
@@ -390,161 +406,175 @@ export default function ChatSidebar({ lines, pinnedIds, filter, className, open:
               <Bot className="h-4 w-4" />
               {open && <span className="text-sm font-medium">{t("chat_title")}</span>}
             </div>
-            <Button
-              size="icon"
-              variant="ghost"
-              onClick={() => setOpen(!open)}
-              title={open ? "Chiudi" : "Apri"}
-            >
-              {open ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
-            </Button>
+            <div className="flex items-center gap-1">
+              {open && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => setShowSettings((v) => !v)}
+                  title={showSettings ? "Nascondi impostazioni" : "Mostra impostazioni"}
+                >
+                  <SlidersHorizontal className="h-4 w-4" />
+                </Button>
+              )}
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => setOpen(!open)}
+                title={open ? "Chiudi" : "Apri"}
+              >
+                {open ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+              </Button>
+            </div>
           </div>
 
           {open && (
             <>
-              {/* SETTINGS */}
-              <div className="p-2 space-y-3 border-b shrink-0">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <Settings2 className="h-4 w-4" />
-                  <span>{t("provider")}</span>
-                </div>
+              {/* SETTINGS (toggle) */}
+              {showSettings && (
+                <div className="p-2 space-y-3 border-b shrink-0">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <Settings2 className="h-4 w-4" />
+                    <span>{t("provider")}</span>
+                  </div>
 
-                <div className="grid grid-cols-1 gap-2">
-                  <label className="text-xs text-muted-foreground">Provider</label>
-                  <select
-                    className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
-                    value={provider}
-                    onChange={(e) => setProvider(e.target.value as Provider)}
-                  >
-                    <option value="openrouter">OpenRouter</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="deepseek">DeepSeek</option>
-                    <option value="ollama">Ollama (locale)</option>
-                  </select>
-                </div>
-
-                {provider !== "ollama" ? (
                   <div className="grid grid-cols-1 gap-2">
-                    <label className="text-xs text-muted-foreground">{t("model")}</label>
+                    <label className="text-xs text-muted-foreground">Provider</label>
                     <select
                       className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
-                      value={model}
-                      onChange={(e) => setModel(e.target.value)}
+                      value={provider}
+                      onChange={(e) => setProvider(e.target.value as Provider)}
                     >
-                      {PROVIDER_MODELS[provider as Exclude<Provider, "ollama">]?.models.map((m) => (
-                        <option key={m.id} value={m.id}>{m.label}</option>
-                      ))}
+                      <option value="openrouter">OpenRouter</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="deepseek">DeepSeek</option>
+                      <option value="ollama">Ollama (locale)</option>
                     </select>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-2">
-                    <label className="text-xs text-muted-foreground">{t("model")}</label>
-                    <Input
-                      value={model}
-                      onChange={(e) => setModel(e.target.value)}
-                      placeholder="ollama model (es. llama3)"
-                    />
-                  </div>
-                )}
 
-                {provider === "ollama" ? (
-                  <div className="grid grid-cols-1 gap-2">
-                    <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Server className="h-3.5 w-3.5" />
-                      Endpoint Ollama
-                    </label>
-                    <Input
-                      value={ollamaEndpoint}
-                      onChange={(e) => setOllamaEndpoint(e.target.value)}
-                      placeholder="http://localhost:11434"
-                    />
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-1">
-                    <label className="text-xs text-muted-foreground">{t("api_key")}</label>
-                    <Input
-                      type="password"
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                      placeholder={t("api_key_hint")}
-                    />
-                    <div className="text-[11px] text-muted-foreground">
-                      {t("api_key_hint")}
+                  {provider !== "ollama" ? (
+                    <div className="grid grid-cols-1 gap-2">
+                      <label className="text-xs text-muted-foreground">{t("model")}</label>
+                      <select
+                        className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
+                        value={model}
+                        onChange={(e) => setModel(e.target.value)}
+                      >
+                        {PROVIDER_MODELS[provider as Exclude<Provider, "ollama">]?.models.map((m) => (
+                          <option key={m.id} value={m.id}>{m.label}</option>
+                        ))}
+                      </select>
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <div className="grid grid-cols-1 gap-2">
+                      <label className="text-xs text-muted-foreground">{t("model")}</label>
+                      <Input
+                        value={model}
+                        onChange={(e) => setModel(e.target.value)}
+                        placeholder="ollama model (es. llama3)"
+                      />
+                    </div>
+                  )}
 
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm">
-                    <Scissors className="h-4 w-4" />
-                    <span>{t("compression")}</span>
+                  {provider === "ollama" ? (
+                    <div className="grid grid-cols-1 gap-2">
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Server className="h-3.5 w-3.5" />
+                        Endpoint Ollama
+                      </label>
+                      <Input
+                        value={ollamaEndpoint}
+                        onChange={(e) => setOllamaEndpoint(e.target.value)}
+                        placeholder="http://localhost:11434"
+                      />
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-1">
+                      <label className="text-xs text-muted-foreground">{t("api_key")}</label>
+                      <Input
+                        type="password"
+                        value={apiKey}
+                        onChange={(e) => setApiKey(e.target.value)}
+                        placeholder={t("api_key_hint")}
+                      />
+                      <div className="text-[11px] text-muted-foreground">
+                        {t("api_key_hint")}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm">
+                      <Scissors className="h-4 w-4" />
+                      <span>{t("compression")}</span>
+                    </div>
+                    <Switch checked={enableCompression} onCheckedChange={setEnableCompression} />
                   </div>
-                  <Switch checked={enableCompression} onCheckedChange={setEnableCompression} />
+
+                  {enableCompression && (
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <label className="flex flex-col gap-1">
+                        {t("max_pinned")}
+                        <Input
+                          type="number"
+                          value={compression.maxPinned}
+                          min={0}
+                          max={1000}
+                          onChange={(e) =>
+                            setCompression((c) => ({ ...c, maxPinned: Math.max(0, Number(e.target.value) || 0) }))
+                          }
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        {t("max_others")}
+                        <Input
+                          type="number"
+                          value={compression.maxOthers}
+                          min={0}
+                          max={2000}
+                          onChange={(e) =>
+                            setCompression((c) => ({ ...c, maxOthers: Math.max(0, Number(e.target.value) || 0) }))
+                          }
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        {t("chars_per_line")}
+                        <Input
+                          type="number"
+                          value={compression.maxLineChars}
+                          min={40}
+                          max={2000}
+                          onChange={(e) =>
+                            setCompression((c) => ({ ...c, maxLineChars: Math.max(40, Number(e.target.value) || 40) }))
+                          }
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        {t("sample_per_level")}
+                        <Input
+                          type="number"
+                          value={compression.samplePerLevel}
+                          min={0}
+                          max={200}
+                          onChange={(e) =>
+                            setCompression((c) => ({ ...c, samplePerLevel: Math.max(0, Number(e.target.value) || 0) }))
+                          }
+                        />
+                      </label>
+                      <label className="flex items-center gap-2 col-span-2">
+                        <Switch
+                          checked={compression.includeStacks}
+                          onCheckedChange={(v) => setCompression((c) => ({ ...c, includeStacks: v }))}
+                        />
+                        <span>{t("keep_stacks")}</span>
+                      </label>
+                      <div className="col-span-2 text-[11px] text-muted-foreground">
+                        {t("compression_hint")}
+                      </div>
+                    </div>
+                  )}
                 </div>
-
-                {enableCompression && (
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <label className="flex flex-col gap-1">
-                      {t("max_pinned")}
-                      <Input
-                        type="number"
-                        value={compression.maxPinned}
-                        min={0}
-                        max={1000}
-                        onChange={(e) =>
-                          setCompression((c) => ({ ...c, maxPinned: Math.max(0, Number(e.target.value) || 0) }))
-                        }
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1">
-                      {t("max_others")}
-                      <Input
-                        type="number"
-                        value={compression.maxOthers}
-                        min={0}
-                        max={2000}
-                        onChange={(e) =>
-                          setCompression((c) => ({ ...c, maxOthers: Math.max(0, Number(e.target.value) || 0) }))
-                        }
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1">
-                      {t("chars_per_line")}
-                      <Input
-                        type="number"
-                        value={compression.maxLineChars}
-                        min={40}
-                        max={2000}
-                        onChange={(e) =>
-                          setCompression((c) => ({ ...c, maxLineChars: Math.max(40, Number(e.target.value) || 40) }))
-                        }
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1">
-                      {t("sample_per_level")}
-                      <Input
-                        type="number"
-                        value={compression.samplePerLevel}
-                        min={0}
-                        max={200}
-                        onChange={(e) =>
-                          setCompression((c) => ({ ...c, samplePerLevel: Math.max(0, Number(e.target.value) || 0) }))
-                        }
-                      />
-                    </label>
-                    <label className="flex items-center gap-2 col-span-2">
-                      <Switch
-                        checked={compression.includeStacks}
-                        onCheckedChange={(v) => setCompression((c) => ({ ...c, includeStacks: v }))}
-                      />
-                      <span>{t("keep_stacks")}</span>
-                    </label>
-                    <div className="col-span-2 text-[11px] text-muted-foreground">
-                      {t("compression_hint")}
-                    </div>
-                  </div>
-                )}
-              </div>
+              )}
 
               {/* MESSAGES */}
               <div ref={listRef} className="flex-1 min-h-0 overflow-auto p-2 space-y-2">
