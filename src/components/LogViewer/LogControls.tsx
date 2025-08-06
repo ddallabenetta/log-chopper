@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Upload, Regex, CaseSensitive, Pin, Filter, Navigation, ArrowDownToLine, ChevronDown, Target } from "lucide-react";
+import { Upload, Regex, CaseSensitive, Pin, Filter, Navigation, ArrowDownToLine, Target, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -23,6 +23,9 @@ type Props = {
   pinnedIds?: string[];
   onJumpToId?: (id: string) => void;
   onJumpToLine?: (n: number) => void;
+  // Navigazione match
+  onPrevMatch?: () => void;
+  onNextMatch?: () => void;
 };
 
 const LEVEL_OPTIONS = (t: (k: string) => string): Array<{ label: string; value: FilterConfig["level"] }> => [
@@ -56,6 +59,8 @@ export default function LogControls({
   pinnedIds = [],
   onJumpToId,
   onJumpToLine,
+  onPrevMatch,
+  onNextMatch,
 }: Props) {
   const { t } = useI18n();
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -107,6 +112,11 @@ export default function LogControls({
     onJumpToLine?.(Math.floor(n));
   };
 
+  const hasActiveFilter =
+    showOnlyPinned ||
+    filter.level !== "ALL" ||
+    (filter.query && filter.query.trim().length > 0);
+
   return (
     <div className="w-full space-y-3">
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
@@ -124,7 +134,6 @@ export default function LogControls({
             onClick={() => fileInputRef.current?.click()}
             className="whitespace-nowrap"
           >
-            <Upload className="mr-2 h-4 w-4" />
             {t("upload_logs")}
           </Button>
         </div>
@@ -144,14 +153,11 @@ export default function LogControls({
             onValueChange={(v) => setMode(v as FilterMode)}
           >
             <TabsList>
-              <TabsTrigger value="text" className="gap-1">
-                <CaseSensitive className="h-4 w-4" /> {t("text")}
-              </TabsTrigger>
-              <TabsTrigger value="regex" className="gap-1">
-                <Regex className="h-4 w-4" /> {t("regex")}
-              </TabsTrigger>
+              <TabsTrigger value="text">Text</TabsTrigger>
+              <TabsTrigger value="regex">Regex</TabsTrigger>
             </TabsList>
           </Tabs>
+
           <div className="flex items-center gap-2 px-2">
             <span className="text-sm text-muted-foreground">{t("case_sensitive")}</span>
             <Switch
@@ -190,10 +196,23 @@ export default function LogControls({
       </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-sm">
-        <div className="flex items-center gap-2">
-          <Badge variant="secondary">{t("totals")}: {totalCount}</Badge>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="secondary">
+            {hasActiveFilter ? "Corrispondenze" : t("totals")}: {totalCount}
+          </Badge>
           <Badge>{t("visible")}: {visibleCount}</Badge>
           <Badge variant="outline">{t("pinned")}: {pinnedCount}</Badge>
+
+          {hasActiveFilter && (
+            <div className="flex items-center gap-1 ml-2">
+              <Button size="sm" variant="outline" className="h-8" onClick={onPrevMatch} title="Precedente">
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button size="sm" variant="outline" className="h-8" onClick={onNextMatch} title="Successivo">
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="flex-1" />

@@ -9,8 +9,7 @@ import ChatSidebar from "./ChatSidebar";
 import { useLogState, ALL_TAB_ID } from "./hooks/useLogState";
 import FileTabs, { type Tab as FileTab } from "./components/FileTabs";
 import DragOverlay from "./components/DragOverlay";
-import { Button } from "@/components/ui/button";
-import { PanelRightOpen, AlertTriangle } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { useI18n } from "@/components/i18n/I18nProvider";
 
 const LS_CHAT_OPEN_KEY = "logviewer.chat.open.v1";
@@ -51,7 +50,6 @@ export default function LogViewer() {
     loadMoreUp,
     loadMoreDown,
     jumpToLine,
-    // nuovi
     currentTotal,
     isLargeProvider,
   } = useLogState();
@@ -62,9 +60,7 @@ export default function LogViewer() {
   React.useEffect(() => {
     try {
       const raw = window.localStorage.getItem(LS_CHAT_OPEN_KEY);
-      if (raw === "0") setChatOpen(false);
-      else if (raw === "1") setChatOpen(true);
-      else setChatOpen(true);
+      setChatOpen(raw !== "0");
     } catch {
       setChatOpen(true);
     } finally {
@@ -124,9 +120,36 @@ export default function LogViewer() {
     currentLines.length === 0 &&
     files.find((f) => f.fileName === selectedTab)?.totalLines === 0;
 
-  const overallTotal = selectedTab === ALL_TAB_ID
-    ? currentLines.length // aggregato per "Tutti"
-    : currentTotal ?? currentLines.length;
+  // Stato per i match e indice corrente
+  const [matchIds, setMatchIds] = React.useState<string[]>([]);
+  const [matchIndex, setMatchIndex] = React.useState<number>(-1);
+
+  React.useEffect(() => {
+    // reset quando cambia filtro o tab
+    setMatchIndex(-1);
+  }, [filter.mode, filter.query, filter.caseSensitive, filter.level, showOnlyPinned, selectedTab]);
+
+  const overallTotal = (() => {
+    const hasActiveFilter =
+      showOnlyPinned ||
+      filter.level !== "ALL" ||
+      (filter.query && filter.query.trim().length > 0);
+
+    if (hasActiveFilter) {
+      return matchIds.length;
+    }
+    return selectedTab === ALL_TAB_ID ? currentLines.length : currentTotal ?? currentLines.length;
+  })();
+
+  const goToMatchAt = (idx: number) => {
+    if (matchIds.length === 0) return;
+    const n = ((idx % matchIds.length) + matchIds.length) % matchIds.length;
+    setMatchIndex(n);
+    setPendingJumpId(matchIds[n]);
+  };
+
+  const goPrevMatch = () => goToMatchAt((matchIndex === -1 ? 0 : matchIndex) - 1);
+  const goNextMatch = () => goToMatchAt((matchIndex === -1 ? 0 : matchIndex) + 1);
 
   return (
     <Card className="w-screen h-[calc(100vh-56px)] max-w-none rounded-none border-0 flex flex-col overflow-hidden">
@@ -176,20 +199,38 @@ export default function LogViewer() {
             onLoadMoreUp={loadMoreUp}
             onLoadMoreDown={loadMoreDown}
             onJumpToLine={jumpToLine}
+            onPrevMatch={goPrevMatch}
+            onNextMatch={goNextMatch}
           />
         </div>
 
         <div
           className="flex-1 min-h-0 rounded-none relative overflow-hidden flex"
-          onDragOver={onDragOver}
-          onDragLeave={onDragLeave}
-          onDrop={onDrop}
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "copy";
+            if (!isDragging) setIsDragging(true);
+          }}
+          onDragLeave={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+          }}
+          onDrop={async (e) => {
+            e.preventDefault();
+            setIsDragging(false);
+            const filesD = e.dataTransfer.files;
+            if (filesD && filesD.length > 0) {
+              await addFiles(filesD);
+            }
+          }}
         >
           {isDragging && <DragOverlay />}
 
           <div className="flex-1 min-w-0 overflow-hidden flex relative">
             <div className="flex-1 min-w-0 overflow-auto relative">
-              {showEmptyHint ? (
+              {selectedTab !== ALL_TAB_ID &&
+              currentLines.length === 0 &&
+              files.find((f) => f.fileName === selectedTab)?.totalLines === 0 ? (
                 <div className="h-full grid place-items-center p-6">
                   <div className="rounded-lg border bg-card px-6 py-5 text-sm text-center space-y-2">
                     <div className="text-base font-medium">{t("drop_files_here")}</div>
@@ -208,13 +249,12 @@ export default function LogViewer() {
                   onLoadMoreTop={handleLoadMoreTop}
                   jumpToId={pendingJumpId}
                   onAfterJump={() => setPendingJumpId(null)}
+                  onMatchesChange={setMatchIds}
                 />
               )}
             </div>
 
-            {!ready ? (
-              <div className="w-14 shrink-0" />
-            ) : (
+            {ready ? (
               <ChatSidebar
                 lines={currentLines}
                 pinnedIds={pinnedIdsFlat}
@@ -222,6 +262,8 @@ export default function LogViewer() {
                 open={true}
                 onOpenChange={() => {}}
               />
+            ) : (
+              <div className="w-14 shrink-0" />
             )}
           </div>
         </div>

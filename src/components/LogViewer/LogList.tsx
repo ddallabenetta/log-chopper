@@ -14,6 +14,8 @@ type Props = {
   onLoadMoreTop?: () => void;
   jumpToId?: string | null;
   onAfterJump?: () => void;
+  // Nuovo: callback per comunicare i match correnti
+  onMatchesChange?: (matchIds: string[]) => void;
 };
 
 const MemoLineItem = React.memo(LogLineItem);
@@ -43,7 +45,7 @@ function buildMatcher(filter: FilterConfig): ((text: string) => { match: boolean
     const ranges: { start: number; end: number }[] = [];
     const haystack = filter.caseSensitive ? text : text.toLowerCase();
     const needle = filter.caseSensitive ? filter.query : filter.query.toLowerCase();
-    if (needle.length === 0) return { match: true, ranges: [] };
+    if (!needle) return { match: true, ranges: [] };
     let from = 0;
     while (true) {
       const idx = haystack.indexOf(needle, from);
@@ -73,7 +75,6 @@ function useRafThrottle<T extends (...args: any[]) => void>(fn: T) {
   return throttled as T;
 }
 
-// Batch updater per le altezze: accorpa più misure in un singolo setState per frame
 function useHeightsBatch() {
   const [heights, setHeights] = React.useState<Map<string, number>>(() => new Map());
   const pendingRef = React.useRef<Map<string, number>>(new Map());
@@ -137,7 +138,6 @@ function MeasuredRow({
   React.useEffect(() => {
     const el = ref.current;
     if (!el) return;
-
     const measure = () => {
       const h = Math.round(el.getBoundingClientRect().height);
       if (Math.abs(h - lastH.current) >= 1) {
@@ -145,10 +145,8 @@ function MeasuredRow({
         onHeightChange(line.id, h);
       }
     };
-
     const ro = new ResizeObserver(measure);
     ro.observe(el);
-    // misura iniziale
     measure();
     return () => ro.disconnect();
   }, [line.id, onHeightChange]);
@@ -174,6 +172,7 @@ export default function LogList({
   onLoadMoreTop,
   jumpToId,
   onAfterJump,
+  onMatchesChange,
 }: Props) {
   const { t } = useI18n();
 
@@ -194,13 +193,28 @@ export default function LogList({
     });
   }, [lines, matcher, pinned, showOnlyPinned, passesLevel]);
 
+  // Calcola gli ID delle righe con vero match testuale (non solo pinned)
+  const matchIds = React.useMemo(() => {
+    if (!filter.query && filter.level === "ALL" && !showOnlyPinned) return [];
+    const res: string[] = [];
+    for (const l of filtered) {
+      const m = matcher(l.content);
+      if (m.match) res.push(l.id);
+    }
+    return res;
+  }, [filtered, matcher, filter.query, filter.level, showOnlyPinned]);
+
+  // Comunica l’elenco match al parent
+  React.useEffect(() => {
+    onMatchesChange?.(matchIds);
+  }, [matchIds, onMatchesChange]);
+
   const ESTIMATE = 34;
   const OVERSCAN = 8;
 
   const { heights, queueHeight } = useHeightsBatch();
 
   const setHeight = React.useCallback((id: string, h: number) => {
-    // Debounce naturale via rAF nel batch updater
     queueHeight(id, h);
   }, [queueHeight]);
 
@@ -240,7 +254,6 @@ export default function LogList({
     const el = containerRef.current;
     if (!el) return;
     if (!didInitScrollBottomRef.current && filtered.length > 0) {
-      // Applica scroll solo se già vicino al fondo per evitare ping-pong
       const nearBottom = el.scrollHeight - (el.scrollTop + el.clientHeight) < 24;
       if (nearBottom) {
         requestAnimationFrame(() => {
@@ -400,8 +413,8 @@ export default function LogList({
           <div style={{ height: totalHeight || ESTIMATE }}>
             {topPad > 0 && <div style={{ height: topPad }} />}
             {slice.map((line, idx) => {
-              const isLast = lastId === line.id;
               const zebra = (startIndex + idx) % 2 === 0 ? "bg-background" : "bg-accent/30";
+              const isLast = lastId === line.id;
               return (
                 <div key={line.id} id={isLast ? "log-last-row" : undefined}>
                   <MeasuredRow
