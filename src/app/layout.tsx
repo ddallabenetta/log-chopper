@@ -3,10 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { SonnerToaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
-import { ThemeToggle } from "@/components/ThemeToggle";
-import PWAInstaller from "@/components/PWAInstaller";
-import { I18nProvider, useI18n } from "@/components/i18n/I18nProvider";
-import LanguageSelect from "@/components/LanguageSelect";
+import { I18nProvider } from "@/components/i18n/I18nProvider";
+import Header from "@/components/Header";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -40,37 +38,6 @@ function RegisterSW() {
     });
   }
   return null;
-}
-
-function Header() {
-  const { t } = useI18n();
-  return (
-    <header className="w-full border-b bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-      <div className="w-full px-4 py-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <h1 className="text-base sm:text-lg md:text-xl font-semibold flex items-center gap-2 truncate">
-            <span role="img" aria-label="tronco">🪵</span>
-            <span className="truncate">{t("app_title")}</span>
-          </h1>
-          <span className="hidden sm:inline text-xs text-muted-foreground">•</span>
-          <a
-            href="https://github.com/ddallabenetta/log-chopper"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
-            title={t("github_title")}
-          >
-            {t("made_with")}
-          </a>
-        </div>
-        <div className="flex items-center gap-2">
-          <LanguageSelect />
-          <PWAInstaller />
-          <ThemeToggle />
-        </div>
-      </div>
-    </header>
-  );
 }
 
 export default function RootLayout({
