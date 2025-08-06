@@ -50,13 +50,17 @@ export default function LogViewer() {
     addEmptyTab, // new in hook
   } = useLogState();
 
-  const [chatOpen, setChatOpen] = React.useState(true);
+  // Inizializza leggendo subito localStorage (default true se non presente)
+  const [chatOpen, setChatOpen] = React.useState<boolean>(() => {
+    if (typeof window === "undefined") return true; // SSR: default aperto
+    const raw = window.localStorage.getItem(LS_CHAT_OPEN_KEY);
+    return raw === "0" ? false : true;
+  });
+
+  // Salva preferenza ogni volta che cambia
   React.useEffect(() => {
-    const raw = localStorage.getItem(LS_CHAT_OPEN_KEY);
-    setChatOpen(raw === "0" ? false : true);
-  }, []);
-  React.useEffect(() => {
-    localStorage.setItem(LS_CHAT_OPEN_KEY, chatOpen ? "1" : "0");
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(LS_CHAT_OPEN_KEY, chatOpen ? "1" : "0");
   }, [chatOpen]);
 
   const onDragOver = (e: React.DragEvent) => {
