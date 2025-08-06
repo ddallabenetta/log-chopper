@@ -39,6 +39,7 @@ export function useLogState() {
   const [pendingJumpId, setPendingJumpId] = React.useState<string | null>(null);
   const [selectedTab, setSelectedTab] = React.useState<string>(ALL_TAB_ID);
 
+  // Manteniamo pageSize internamente per bilanciare caricamenti (non più mostrato in UI)
   const [pageSize, setPageSize] = React.useState<number>(() => {
     if (typeof window === "undefined") return 20000;
     const raw = window.localStorage.getItem(LS_PAGE_SIZE);
@@ -54,7 +55,7 @@ export function useLogState() {
   // Provider per fileName -> provider
   const providersRef = React.useRef<Map<string, LineProvider>>(new Map());
 
-  // Restore pinned e meta file (solo nomi e totali; i provider grandi saranno creati all'import)
+  // Restore pinned e meta file
   React.useEffect(() => {
     (async () => {
       setIsRestoring(true);
@@ -94,7 +95,7 @@ export function useLogState() {
     return id;
   }, []);
 
-  // Import: decide provider in base alla dimensione (large-file > 50MB)
+  // Import: small vs large provider
   const addFiles = async (list: FileList | File[]) => {
     const arr = Array.from(list);
     if (arr.length === 0) return;
@@ -108,17 +109,13 @@ export function useLogState() {
     for (const f of arr) {
       importedNames.push(f.name);
 
-      let provider: LineProvider;
       if (f.size > LARGE_FILE_THRESHOLD) {
-        // LARGE provider: indice leggero, nessun salvataggio su IDB
-        provider = await createLargeProvider(f);
+        // LARGE provider
+        const provider = await createLargeProvider(f);
         providersRef.current.set(f.name, provider);
 
-        // aggiorna lista file (totale da indice)
         const total = await provider.totalLines();
         setFiles((prev) => upsertFile(prev, { fileName: f.name, lines: [], totalLines: total }));
-
-        // carica una tail window
         const tail = await provider.tail(Math.min(pageSize, total));
         setAllLines((prev) => {
           const others = prev.filter((l) => l.fileName !== f.name);
@@ -127,17 +124,42 @@ export function useLogState() {
 
         newStats.push({ fileName: f.name, totalLines: total, droppedLines: 0 });
       } else {
-        // SMALL provider (IndexedDB) – usiamo la pipeline esistente di Log Chopper
-        provider = await createIdbProvider(f.name);
+        // SMALL: indicizzazione e salvataggio in IDB con provider idb
+        // Creiamo un indice leggero locale per contare le righe e poi salviamo in IDB in batch
+        const largeTemp = await (await import("./large-file-index")).buildLargeFileIndex(f);
+        const total = largeTemp.totalLines;
+
+        // Salva su IDB in blocchi per non saturare memoria
+        const BLOCK = 20000;
+        for (let from = 1; from <= total; from += BLOCK) {
+          const to = Math.min(total, from + BLOCK - 1);
+          const lines = await largeTemp.readLines(from, to);
+          const batch: LogLine[] = lines.map((content, i) => {
+            const lineNumber = from + i;
+            return {
+              id: `${f.name}:${lineNumber}`,
+              fileName: f.name,
+              lineNumber,
+              content,
+              level: detectLevel(content),
+            } as LogLine;
+          });
+          const { saveBatchToDb, updateFileTotal } = await import("./log-pagination");
+          await saveBatchToDb(batch);
+          await updateFileTotal(f.name, to);
+        }
+
+        // Ora usa il provider IDB
+        const provider = await createIdbProvider(f.name);
         providersRef.current.set(f.name, provider);
 
-        const total = await provider.totalLines();
         setFiles((prev) => upsertFile(prev, { fileName: f.name, lines: [], totalLines: total }));
         const tail = await provider.tail(Math.min(pageSize, total));
         setAllLines((prev) => {
           const others = prev.filter((l) => l.fileName !== f.name);
           return dedupeById([...others, ...tail]);
         });
+
         newStats.push({ fileName: f.name, totalLines: total, droppedLines: 0 });
       }
     }
@@ -185,7 +207,6 @@ export function useLogState() {
   };
 
   const clearAll = (showToast = true) => {
-    // dispose providers
     for (const p of providersRef.current.values()) p.dispose?.();
     providersRef.current.clear();
 
@@ -203,6 +224,8 @@ export function useLogState() {
     setSelectedTab(id);
   };
 
+  const { detectLevel } = require("./log-helpers") as typeof import("./log-helpers");
+
   const togglePin = (id: string) => {
     const target = allLines.find((l) => l.id === id);
     if (!target) return;
@@ -218,7 +241,6 @@ export function useLogState() {
     });
   };
 
-  // Paging helpers attraverso provider
   async function loadMoreUp() {
     if (selectedTab === ALL_TAB_ID) return;
     const prov = providersRef.current.get(selectedTab);
@@ -290,7 +312,7 @@ export function useLogState() {
 
   const onJumpToId = (id: string) => setPendingJumpId(id);
 
-  // Quando cambia tab o pageSize, ricarichiamo la coda con il suo provider
+  // Ricarica coda quando cambia tab o pageSize
   React.useEffect(() => {
     (async () => {
       const tab = selectedTab;
@@ -313,6 +335,27 @@ export function useLogState() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTab, pageSize]);
+
+  // Precaricamento automatico: se l’utente è vicino ai margini, carica blocchi
+  React.useEffect(() => {
+    const el: HTMLElement | null = (window as any).__LOG_LIST_CONTAINER__;
+    if (!el) return;
+
+    const onScroll = () => {
+      if (selectedTab === ALL_TAB_ID) return;
+      const nearTop = el.scrollTop <= 80;
+      const nearBottom = el.scrollHeight - (el.scrollTop + el.clientHeight) <= 80;
+
+      if (nearTop) {
+        void loadMoreUp();
+      } else if (nearBottom) {
+        void loadMoreDown();
+      }
+    };
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [selectedTab, allLines.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Derived
   const currentLines = React.useMemo<LogLine[]>(() => {

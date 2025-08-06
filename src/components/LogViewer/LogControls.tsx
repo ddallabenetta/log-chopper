@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Upload, Regex, CaseSensitive, Pin, Filter, Navigation, ArrowDownToLine, Rows3, ChevronUp, ChevronDown, Target } from "lucide-react";
+import { Upload, Regex, CaseSensitive, Pin, Filter, Navigation, ArrowDownToLine, ChevronDown, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -22,11 +22,6 @@ type Props = {
   onFilesSelected: (files: FileList) => void;
   pinnedIds?: string[];
   onJumpToId?: (id: string) => void;
-  pageSize?: number;
-  onChangePageSize?: (v: number) => void;
-  // nuovi handler
-  onLoadMoreUp?: () => void;
-  onLoadMoreDown?: () => void;
   onJumpToLine?: (n: number) => void;
 };
 
@@ -60,10 +55,6 @@ export default function LogControls({
   onFilesSelected,
   pinnedIds = [],
   onJumpToId,
-  pageSize = 20000,
-  onChangePageSize,
-  onLoadMoreUp,
-  onLoadMoreDown,
   onJumpToLine,
 }: Props) {
   const { t } = useI18n();
@@ -208,42 +199,6 @@ export default function LogControls({
         <div className="flex-1" />
 
         <div className="flex items-center gap-2 flex-wrap">
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Rows3 className="h-4 w-4" />
-            Righe per pagina
-            <Input
-              type="number"
-              min={2000}
-              max={200000}
-              step={1000}
-              value={pageSize}
-              onChange={(e) => onChangePageSize?.(Number(e.target.value))}
-              className="h-8 w-28"
-            />
-          </label>
-
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-2"
-            onClick={onLoadMoreUp}
-            title="Carica più su"
-          >
-            <ChevronUp className="h-4 w-4" />
-            Su
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-2"
-            onClick={onLoadMoreDown}
-            title="Carica più giù"
-          >
-            <ChevronDown className="h-4 w-4" />
-            Giù
-          </Button>
-
           <div className="flex items-center gap-2">
             <label className="text-xs text-muted-foreground flex items-center gap-1">
               <Target className="h-4 w-4" />
