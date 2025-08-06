@@ -15,7 +15,7 @@ type Props = {
   onAfterJump?: () => void;
 };
 
-// Wrap memo per prevenire re-render non necessari degli item
+// Item memoized
 const MemoLineItem = React.memo(LogLineItem);
 
 function buildMatcher(filter: FilterConfig): ((text: string) => { match: boolean; ranges: { start: number; end: number }[] }) {
@@ -57,7 +57,7 @@ function buildMatcher(filter: FilterConfig): ((text: string) => { match: boolean
   };
 }
 
-// throttle semplice basato su rAF
+// throttle con rAF
 function useRafThrottle<T extends (...args: any[]) => void>(fn: T) {
   const ref = React.useRef<number | null>(null);
   const lastArgs = React.useRef<any[]>([]);
@@ -65,7 +65,6 @@ function useRafThrottle<T extends (...args: any[]) => void>(fn: T) {
   React.useEffect(() => {
     saved.current = fn;
   }, [fn]);
-
   const throttled = React.useCallback((...args: any[]) => {
     lastArgs.current = args;
     if (ref.current != null) return;
@@ -96,7 +95,7 @@ export default function LogList({
     [filter.level]
   );
 
-  // Filtro solo per id visibili; importante: evita di calcolare highlight qui
+  // Filtro stabile
   const filtered = React.useMemo(() => {
     return lines.filter((l) => {
       if (showOnlyPinned) return pinned.has(l.id);
@@ -106,14 +105,13 @@ export default function LogList({
     });
   }, [lines, matcher, pinned, showOnlyPinned, passesLevel]);
 
-  // Parametri virtualizzazione
-  const EST_ROW = 32; // altezza media pixel
+  // Virtualizzazione: altezza riga fissa
+  const ROW_H = 34; // fissa: deve essere >= minHeight del wrapper + padding
   const OVERSCAN = 12;
 
   const [scrollTop, setScrollTop] = React.useState(0);
   const [viewportH, setViewportH] = React.useState(0);
 
-  // Handlers throttled
   const handleScroll = useRafThrottle(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -137,7 +135,7 @@ export default function LogList({
     };
   }, [handleScroll, handleResize]);
 
-  // Primo popolamento: scroll in fondo una volta
+  // Primo popolamento: scroll in fondo
   const didInitScrollBottomRef = React.useRef(false);
   React.useEffect(() => {
     const el = containerRef.current;
@@ -150,7 +148,7 @@ export default function LogList({
     }
   }, [filtered.length]);
 
-  // Segui il fondo quando arrivano nuove righe
+  // Segui il fondo su nuove righe
   const prevLenRef = React.useRef(0);
   React.useEffect(() => {
     const el = containerRef.current;
@@ -166,7 +164,7 @@ export default function LogList({
     prevLenRef.current = filtered.length;
   }, [filtered.length]);
 
-  // Load more on top
+  // Load more top
   React.useEffect(() => {
     const el = containerRef.current;
     if (!el || !onLoadMoreTop) return;
@@ -190,25 +188,24 @@ export default function LogList({
     onAfterJump && onAfterJump();
   }, [jumpToId, onAfterJump]);
 
-  // Espone il container globalmente per “Vai in fondo”
+  // Espone container globalmente
   React.useEffect(() => {
     (window as any).__LOG_LIST_CONTAINER__ = containerRef.current;
   }, []);
 
-  // Calcolo finestra virtualizzata
+  // Finestra virtualizzata
   const total = filtered.length;
-  const startIndex = Math.max(0, Math.floor(scrollTop / EST_ROW) - OVERSCAN);
-  const visibleCount = Math.max(0, Math.ceil((viewportH || 1) / EST_ROW) + OVERSCAN * 2);
+  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
+  const visibleCount = Math.max(0, Math.ceil((viewportH || 1) / ROW_H) + OVERSCAN * 2);
   const endIndex = Math.min(total, startIndex + visibleCount);
 
-  const topPad = startIndex * EST_ROW;
-  const bottomPad = Math.max(0, (total - endIndex) * EST_ROW);
+  const topPad = startIndex * ROW_H;
+  const bottomPad = Math.max(0, (total - endIndex) * ROW_H);
 
-  // Slice memoizzata per evitare remount frequenti
   const slice = React.useMemo(() => filtered.slice(startIndex, endIndex), [filtered, startIndex, endIndex]);
   const lastId = slice.length > 0 ? slice[slice.length - 1]?.id : null;
 
-  // Calcola highlight SOLO per la slice visibile
+  // Highlight SOLO per la slice
   const sliceHighlightMap = React.useMemo(() => {
     const map = new Map<string, { start: number; end: number }[]>();
     if (!showOnlyPinned || filter.query) {
@@ -232,18 +229,15 @@ export default function LogList({
         ) : (
           <div>
             {topPad > 0 && <div style={{ height: topPad }} />}
-            {slice.map((line, idx) => {
-              const globalIdx = startIndex + idx;
-              const isEven = globalIdx % 2 === 0;
-              const renderKey = `${line.id}__${globalIdx}`;
+            {slice.map((line) => {
               const isLast = lastId === line.id;
               return (
                 <div
-                  key={renderKey}
-                  className={isEven ? "bg-muted/30" : "bg-transparent"}
+                  key={line.id} // key stabile: solo id
                   data-row-id={line.id}
                   id={isLast ? "log-last-row" : undefined}
-                  style={{ minHeight: EST_ROW }}
+                  className="bg-transparent"
+                  style={{ minHeight: ROW_H }}
                 >
                   <MemoLineItem
                     line={line}
