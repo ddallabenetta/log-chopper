@@ -10,7 +10,7 @@ import { useLogState, ALL_TAB_ID } from "./hooks/useLogState";
 import FileTabs, { type Tab as FileTab } from "./components/FileTabs";
 import DragOverlay from "./components/DragOverlay";
 import { Button } from "@/components/ui/button";
-import { PanelRightOpen } from "lucide-react";
+import { PanelRightOpen, AlertTriangle } from "lucide-react";
 import { useI18n } from "@/components/i18n/I18nProvider";
 
 const LS_CHAT_OPEN_KEY = "logviewer.chat.open.v1";
@@ -51,6 +51,9 @@ export default function LogViewer() {
     loadMoreUp,
     loadMoreDown,
     jumpToLine,
+    // nuovi
+    currentTotal,
+    isLargeProvider,
   } = useLogState();
 
   const [ready, setReady] = React.useState(false);
@@ -121,6 +124,10 @@ export default function LogViewer() {
     currentLines.length === 0 &&
     files.find((f) => f.fileName === selectedTab)?.totalLines === 0;
 
+  const overallTotal = selectedTab === ALL_TAB_ID
+    ? currentLines.length // aggregato per "Tutti"
+    : currentTotal ?? currentLines.length;
+
   return (
     <Card className="w-screen h-[calc(100vh-56px)] max-w-none rounded-none border-0 flex flex-col overflow-hidden">
       {isRestoring && (
@@ -143,13 +150,22 @@ export default function LogViewer() {
           onNewTab={onNewTab}
         />
 
+        {selectedTab !== ALL_TAB_ID && isLargeProvider && (
+          <div className="mx-3 my-2 rounded-md border border-yellow-500/50 bg-yellow-50 dark:bg-yellow-900/20 px-3 py-2 text-xs flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 mt-0.5" />
+            <div>
+              Questo è un file molto grande. Non sarà disponibile dopo il refresh del browser e le risposte del chatbot potrebbero non essere complete perché il contesto viene caricato a blocchi.
+            </div>
+          </div>
+        )}
+
         <div className="shrink-0 p-3">
           <LogControls
             filter={filter}
             onFilterChange={setFilter}
             pinnedCount={currentPinnedSet.size}
             visibleCount={visibleCount}
-            totalCount={currentLines.length}
+            totalCount={overallTotal}
             showOnlyPinned={showOnlyPinned}
             onToggleShowOnlyPinned={() => setShowOnlyPinned((v) => !v)}
             onFilesSelected={(fl) => addFiles(fl)}
@@ -199,7 +215,6 @@ export default function LogViewer() {
             {!ready ? (
               <div className="w-14 shrink-0" />
             ) : (
-              // Sidebar AI come prima
               <ChatSidebar
                 lines={currentLines}
                 pinnedIds={pinnedIdsFlat}

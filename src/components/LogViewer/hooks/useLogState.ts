@@ -52,7 +52,6 @@ export function useLogState() {
   const loadingUpRef = React.useRef(false);
   const loadingDownRef = React.useRef(false);
 
-  // Restore da IDB: ripristina meta, pinned e, se presente il file in IDB, crea provider e carica tail
   React.useEffect(() => {
     (async () => {
       setIsRestoring(true);
@@ -72,7 +71,6 @@ export function useLogState() {
       }
       setPinnedByFile(nextPinned);
 
-      // Crea provider IDB per ciascun file presente e carica tail
       for (const f of metaFiles) {
         const exists = await idbHasFile(f.fileName);
         if (!exists) continue;
@@ -133,7 +131,6 @@ export function useLogState() {
 
         newStats.push({ fileName: f.name, totalLines: total, droppedLines: 0 });
       } else {
-        // Small: indicizza e salva su IDB, poi provider IDB
         const largeTemp = await (await import("./large-file-index")).buildLargeFileIndex(f);
         const total = largeTemp.totalLines;
 
@@ -208,7 +205,6 @@ export function useLogState() {
       return next;
     });
 
-    // Elimina definitivamente i dati del file dalla IDB
     await idbDeleteFile(fileName);
 
     setSelectedTab((cur) => (cur === fileName ? ALL_TAB_ID : cur));
@@ -260,7 +256,7 @@ export function useLogState() {
 
       const current = allLines.filter((l) => l.fileName === selectedTab);
       const first = current[0];
-      const block = Math.max(1000, Math.min(pageSize, 20000));
+      const block = Math.max(2000, Math.min(pageSize, 20000));
       const fromLine = first ? Math.max(1, first.lineNumber - block) : 1;
       const toLine = first ? first.lineNumber - 1 : 0;
       if (toLine < fromLine) return;
@@ -292,7 +288,7 @@ export function useLogState() {
       const current = allLines.filter((l) => l.fileName === selectedTab);
       const last = current[current.length - 1];
       const fromLine = last ? last.lineNumber + 1 : Math.max(1, total - pageSize + 1);
-      const toLine = Math.min(total, fromLine + Math.max(1000, Math.min(pageSize, 20000)) - 1);
+      const toLine = Math.min(total, fromLine + Math.max(2000, Math.min(pageSize, 20000)) - 1);
       if (toLine < fromLine) return;
 
       const newer = await prov.range(fromLine, toLine);
@@ -333,6 +329,7 @@ export function useLogState() {
 
   const onJumpToId = (id: string) => setPendingJumpId(id);
 
+  // Ricarica tail alla selezione tab
   React.useEffect(() => {
     (async () => {
       const tab = selectedTab;
@@ -355,6 +352,24 @@ export function useLogState() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTab, pageSize]);
+
+  // Prefetch proattivo quando è attivo un filtro di ricerca: estende la finestra verso l’alto e il basso
+  React.useEffect(() => {
+    const hasActiveFilter =
+      showOnlyPinned ||
+      filter.level !== "ALL" ||
+      (filter.query && filter.query.trim().length > 0);
+
+    if (!hasActiveFilter) return;
+
+    const id = setInterval(() => {
+      // alterna up/down per espandere rapidamente la copertura
+      void loadMoreUp();
+      void loadMoreDown();
+    }, 500);
+
+    return () => clearInterval(id);
+  }, [filter.mode, filter.query, filter.caseSensitive, filter.level, showOnlyPinned, selectedTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   React.useEffect(() => {
     const el: HTMLElement | null = (window as any).__LOG_LIST_CONTAINER__;
@@ -433,6 +448,36 @@ export function useLogState() {
     return [{ id: ALL_TAB_ID, label: "Tutti", count: allLines.length }, ...entries];
   }, [files, allLines.length]);
 
+  // Totale reale e info provider
+  const currentTotal = React.useMemo<number | undefined>(() => {
+    if (selectedTab === ALL_TAB_ID) return undefined;
+    const prov = providersRef.current.get(selectedTab);
+    return undefined; // usato solo come "signal"; la funzione below è async
+  }, [selectedTab]);
+
+  const [resolvedTotal, setResolvedTotal] = React.useState<number | undefined>(undefined);
+  React.useEffect(() => {
+    (async () => {
+      if (selectedTab === ALL_TAB_ID) {
+        setResolvedTotal(undefined);
+        return;
+      }
+      const prov = providersRef.current.get(selectedTab);
+      if (!prov) {
+        setResolvedTotal(undefined);
+        return;
+      }
+      const total = await prov.totalLines();
+      setResolvedTotal(total);
+    })();
+  }, [selectedTab, allLines.length]);
+
+  const isLargeProvider = React.useMemo<boolean>(() => {
+    if (selectedTab === ALL_TAB_ID) return false;
+    const prov = providersRef.current.get(selectedTab);
+    return prov?.kind === "large";
+  }, [selectedTab, providersRef.current.size]); // size non cambia, ma teniamo dipendenze minimali
+
   const onChangeMaxLines = (val: number) => {
     const v = Math.max(1000, Math.min(500000, Math.floor(val)));
     setMaxLines(v);
@@ -474,5 +519,8 @@ export function useLogState() {
     loadMoreDown,
     jumpToLine,
     handleLoadMoreTop: loadMoreUp,
+    // nuovi
+    currentTotal: resolvedTotal,
+    isLargeProvider,
   };
 }
