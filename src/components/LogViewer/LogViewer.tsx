@@ -46,12 +46,10 @@ export default function LogViewer() {
     onChangeMaxLines,
     onJumpToId,
     addEmptyTab,
+    pageSize,
+    setPageSize,
   } = useLogState();
 
-  // Nuovo stato locale per pageSize (verrà spostato nello store al prossimo passo)
-  const [pageSize, setPageSize] = React.useState<number>(20000);
-
-  // Preferenza client per apertura chat
   const [ready, setReady] = React.useState(false);
   const [chatOpen, setChatOpen] = React.useState<boolean>(true);
 
@@ -87,9 +85,9 @@ export default function LogViewer() {
   const onDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const files = e.dataTransfer.files;
-    if (files && files.length > 0) {
-      await addFiles(files);
+    const filesD = e.dataTransfer.files;
+    if (filesD && filesD.length > 0) {
+      await addFiles(filesD);
     }
   };
 
@@ -154,7 +152,6 @@ export default function LogViewer() {
             onFilesSelected={(fl) => addFiles(fl)}
             pinnedIds={pinnedIdsFlat}
             onJumpToId={onJumpToId}
-            // Nuovi prop per paginazione
             pageSize={pageSize}
             onChangePageSize={setPageSize}
           />

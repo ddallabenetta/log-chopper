@@ -24,6 +24,7 @@ export const ALL_TAB_ID = "__ALL__";
 
 // Config
 const TAIL_PREVIEW_DEFAULT = 50000;
+const LS_PAGE_SIZE = "logviewer.pageSize.v1";
 
 function detectLevel(text: string): LogLevel {
   const t = text.toUpperCase();
@@ -84,7 +85,7 @@ export function useLogState() {
   });
   const [showOnlyPinned, setShowOnlyPinned] = React.useState(false);
 
-  // Nota: maxLines non governa più la memoria (rimane per compat). Non usato per troncare.
+  // Compat: maxLines non usato per troncare più
   const [maxLines, setMaxLines] = React.useState<number>(50000);
 
   const [isDragging, setIsDragging] = React.useState(false);
@@ -96,7 +97,20 @@ export function useLogState() {
 
   const [selectedTab, setSelectedTab] = React.useState<string>(ALL_TAB_ID);
 
-  // Restore meta e pinned; le righe ora si leggono a richiesta
+  // pageSize con persistenza
+  const [pageSize, setPageSize] = React.useState<number>(() => {
+    if (typeof window === "undefined") return 20000;
+    const raw = window.localStorage.getItem(LS_PAGE_SIZE);
+    const n = raw ? Number(raw) : 20000;
+    return Number.isFinite(n) && n >= 2000 ? Math.min(200000, Math.max(2000, Math.floor(n))) : 20000;
+  });
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem(LS_PAGE_SIZE, String(pageSize));
+    } catch {}
+  }, [pageSize]);
+
+  // Restore meta e pinned; le righe si leggono a richiesta
   React.useEffect(() => {
     (async () => {
       setIsRestoring(true);
@@ -115,7 +129,6 @@ export function useLogState() {
       }
       setPinnedByFile(nextPinned);
 
-      // Se non c'è stato, nuova tab vuota
       if (!metaFiles || metaFiles.length === 0) {
         const id = `Nuova-${emptyTabCounter++}`;
         setFiles([{ fileName: id, lines: [], totalLines: 0 }]);
@@ -128,7 +141,6 @@ export function useLogState() {
     })();
   }, []);
 
-  // Aggiungi tab vuota
   const addEmptyTab = React.useCallback(() => {
     const id = `Nuova-${emptyTabCounter++}`;
     setFiles((prev) => {
@@ -138,7 +150,7 @@ export function useLogState() {
     return id;
   }, []);
 
-  // Import file: append in DB, aggiorna meta, mostra anteprima tail-first
+  // Import file: salvataggio su DB e anteprima tail-first 50k
   const addFiles = async (list: FileList | File[]) => {
     const arr = Array.from(list);
     if (arr.length === 0) return;
@@ -170,7 +182,6 @@ export function useLogState() {
         batch.push(lineObj);
 
         if (batch.length >= batchSize) {
-          // persist batch
           await idbAppendLogs(
             batch.map((l) => ({
               id: l.id,
@@ -183,7 +194,7 @@ export function useLogState() {
           batch = [];
           await idbUpdateFileTotal(fileName, totalLines);
 
-          // aggiorna anteprima tail-first in UI senza attendere fine import
+          // Anteprima tail-first durante l'import: 50k
           const preview = await idbGetLastN(fileName, TAIL_PREVIEW_DEFAULT);
           const mapped = preview.map((l) => ({
             id: l.id,
@@ -195,7 +206,6 @@ export function useLogState() {
           mapped.sort((a, b) => a.lineNumber - b.lineNumber);
 
           setAllLines((prev) => {
-            // Se ho selezionato quel file o ALL, aggiorno vista
             if (selectedTab === ALL_TAB_ID || selectedTab === fileName) {
               const others = prev.filter((l) => l.fileName !== fileName);
               return dedupeById([...others, ...mapped]);
@@ -214,7 +224,6 @@ export function useLogState() {
         }
       }
 
-      // flush finale
       if (batch.length > 0) {
         await idbAppendLogs(
           batch.map((l) => ({
@@ -228,7 +237,7 @@ export function useLogState() {
         await idbUpdateFileTotal(fileName, totalLines);
       }
 
-      // aggiorna anteprima finale
+      // Fine import: aggiorna anteprima una volta (ancora 50k per coerenza visuale)
       const preview = await idbGetLastN(fileName, TAIL_PREVIEW_DEFAULT);
       const mapped = preview.map((l) => ({
         id: l.id,
@@ -262,12 +271,10 @@ export function useLogState() {
     setIngestStats(newStats);
     setIngesting(false);
 
-    // Se ero su una tab Nuova-*, rimuovila
     if (wasOnNewTab) {
       setFiles((prev) => prev.filter((f) => f.fileName !== selectedTab));
     }
 
-    // Seleziona l’ultimo file importato
     const lastImported = importedNames[importedNames.length - 1];
     if (lastImported) {
       setSelectedTab(lastImported);
@@ -325,12 +332,13 @@ export function useLogState() {
     });
   };
 
-  // Caricamento pagina precedente (top) per la tab corrente
+  // Caricamento pagina precedente (top)
   const handleLoadMoreTop = async () => {
-    if (selectedTab === ALL_TAB_ID) return; // Per semplicità, pagina solo per file specifico
+    if (selectedTab === ALL_TAB_ID) return;
     const current = allLines.filter((l) => l.fileName === selectedTab);
     const first = current[0];
-    const fromLine = first ? Math.max(1, first.lineNumber - 2000) : 1;
+    const block = Math.max(1000, Math.min(pageSize, 20000)); // carica blocchi fino a pageSize, massimo 20k per step
+    const fromLine = first ? Math.max(1, first.lineNumber - block) : 1;
     const toLine = first ? first.lineNumber - 1 : 0;
     if (toLine < fromLine) return;
     const older = await idbGetLogsByRange(selectedTab, fromLine, toLine);
@@ -356,13 +364,26 @@ export function useLogState() {
     setPendingJumpId(id);
   };
 
-  // Quando cambio tab, mostra anteprima tail-first del file
+  // Quando cambio tab: carica finestra visibile basata su pageSize
   React.useEffect(() => {
     (async () => {
       const tab = selectedTab;
       if (!tab || tab === ALL_TAB_ID) return;
-      const preview = await idbGetLastN(tab, TAIL_PREVIEW_DEFAULT);
-      const mapped = preview.map((l) => ({
+
+      // Ottieni totali per tab correnti
+      const meta = await idbGetFilesMeta();
+      const info = meta.find((m) => m.fileName === tab);
+      const total = info?.totalLines ?? 0;
+      if (total <= 0) {
+        setAllLines((prev) => prev.filter((l) => l.fileName !== tab));
+        return;
+      }
+
+      const n = Math.max(1, Math.min(pageSize, total));
+      const from = total - n + 1;
+      const to = total;
+      const rows = await idbGetLogsByRange(tab, from, to);
+      const mapped = rows.map((l) => ({
         id: l.id,
         fileName: l.fileName,
         lineNumber: l.lineNumber,
@@ -370,12 +391,14 @@ export function useLogState() {
         level: (l.level as LogLevel) || "OTHER",
       }));
       mapped.sort((a, b) => a.lineNumber - b.lineNumber);
+
       setAllLines((prev) => {
         const others = prev.filter((l) => l.fileName !== tab);
         return dedupeById([...others, ...mapped]);
       });
     })();
-  }, [selectedTab]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTab, pageSize]);
 
   const currentLines = React.useMemo<LogLine[]>(() => {
     if (selectedTab === ALL_TAB_ID) return allLines;
@@ -440,7 +463,6 @@ export function useLogState() {
   }, [files, allLines.length]);
 
   const onChangeMaxLines = (val: number) => {
-    // Non tronchiamo più i dati: teniamo per compat una notifica e aggiorniamo stato locale.
     const v = Math.max(1000, Math.min(500000, Math.floor(val)));
     setMaxLines(v);
     toast.message(`Righe per finestra (compat): ${v.toLocaleString()}`);
@@ -478,5 +500,8 @@ export function useLogState() {
     onChangeMaxLines,
     onJumpToId,
     addEmptyTab,
+    // pagination
+    pageSize,
+    setPageSize,
   };
 }
