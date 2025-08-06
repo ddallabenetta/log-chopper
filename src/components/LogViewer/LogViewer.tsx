@@ -52,7 +52,6 @@ export default function LogViewer() {
     jumpToLine,
     currentTotal,
     isLargeProvider,
-    // nuovi
     jumpToStart,
     jumpToEnd,
   } = useLogState();
@@ -77,28 +76,6 @@ export default function LogViewer() {
       window.localStorage.setItem(LS_CHAT_OPEN_KEY, chatOpen ? "1" : "0");
     } catch {}
   }, [chatOpen, ready]);
-
-  const onDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-    if (!isDragging) setIsDragging(true);
-  };
-  const onDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-  const onDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const filesD = e.dataTransfer.files;
-    if (filesD && filesD.length > 0) {
-      await addFiles(filesD);
-    }
-  };
-
-  React.useEffect(() => {
-    if (ingesting) toast.message("Import in corso…");
-  }, [ingesting]);
 
   const onNewTab = () => {
     const id = addEmptyTab();
@@ -154,14 +131,12 @@ export default function LogViewer() {
 
   const currentMatchId = matchIndex >= 0 ? matchIds[matchIndex] : null;
 
-  // Nuove azioni: start/end assoluti su file correnti
   const handleGoToStart = () => {
     if (selectedTab === ALL_TAB_ID) return;
     void jumpToStart();
   };
   const handleGoToEnd = () => {
     if (selectedTab === ALL_TAB_ID) {
-      // per ALL usiamo il vecchio scroll-to-bottom
       (window as any).__LOG_LIST_SCROLL_TO_BOTTOM__?.();
       return;
     }
@@ -212,37 +187,16 @@ export default function LogViewer() {
             pinnedIds={pinnedIdsFlat}
             onJumpToId={onJumpToId}
             onJumpToLine={jumpToLine}
-            // frecce accanto all'input
             onPrevMatch={goPrevMatch}
             onNextMatch={goNextMatch}
             matchesEnabled={hasActiveFilter && matchIds.length > 0}
-            // nuovi
             onGoToStart={handleGoToStart}
             onGoToEnd={handleGoToEnd}
           />
         </div>
 
-        <div
-          className="flex-1 min-h-0 rounded-none relative overflow-hidden flex"
-          onDragOver={(e) => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "copy";
-            if (!isDragging) setIsDragging(true);
-          }}
-          onDragLeave={(e) => {
-            e.preventDefault();
-            setIsDragging(false);
-          }}
-          onDrop={async (e) => {
-            e.preventDefault();
-            setIsDragging(false);
-            const filesD = e.dataTransfer.files;
-            if (filesD && filesD.length > 0) {
-              await addFiles(filesD);
-            }
-          }}
-        >
-          {isDragging && <DragOverlay />}
+        <div className="flex-1 min-h-0 rounded-none relative overflow-hidden flex">
+          {false && <div />} {/* placeholder to keep structure stable */}
 
           <div className="flex-1 min-w-0 overflow-hidden flex relative">
             <div className="flex-1 min-w-0 overflow-auto relative">
@@ -276,8 +230,8 @@ export default function LogViewer() {
                 lines={currentLines}
                 pinnedIds={pinnedIdsFlat}
                 filter={filter}
-                open={true}
-                onOpenChange={() => {}}
+                open={chatOpen}
+                onOpenChange={setChatOpen}
               />
             ) : (
               <div className="w-14 shrink-0" />

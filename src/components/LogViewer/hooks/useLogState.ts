@@ -109,10 +109,8 @@ export function useLogState() {
     if (arr.length === 0) return;
     setIngesting(true);
 
-    const wasOnNewTab = selectedTab !== ALL_TAB_ID && selectedTab.startsWith("Nuova-");
-
     const newStats: FileIngestStats[] = [];
-    the_loop: for (const f of arr) {
+    for (const f of arr) {
       if (f.size > LARGE_FILE_THRESHOLD) {
         const provider = await createLargeProvider(f);
         providersRef.current.set(f.name, provider);
@@ -166,7 +164,6 @@ export function useLogState() {
     setIngestStats(newStats);
     setIngesting(false);
 
-    // porta l’utente sull’ultima tab importata
     if (arr.length > 0) {
       const lastName = arr[arr.length - 1]!.name;
       setSelectedTab(lastName);
@@ -333,7 +330,6 @@ export function useLogState() {
     setPendingJumpId(`${selectedTab}:${target}`);
   }
 
-  // Fix: jumpToStart forza sempre il caricamento [1..pageSize] e il focus su riga 1
   async function jumpToStart() {
     if (selectedTab === ALL_TAB_ID) return;
     const prov = providersRef.current.get(selectedTab);
@@ -350,10 +346,10 @@ export function useLogState() {
       return dedupeById([...others, ...rows]);
     });
 
-    // Imposta sempre il jumpId alla riga 1 anche se era già presente, per forzare lo scroll
     setPendingJumpId(`${selectedTab}:1`);
   }
 
+  // Stabilizzato: carica sempre la finestra finale e forza il jump esplicito all’ultima riga
   async function jumpToEnd() {
     if (selectedTab === ALL_TAB_ID) return;
     const prov = providersRef.current.get(selectedTab);
@@ -364,10 +360,13 @@ export function useLogState() {
     const from = Math.max(1, to - pageSize + 1);
     const rows = await prov.range(from, to);
     if (!rows.length) return;
+
     setAllLines((prev) => {
       const others = prev.filter((l) => l.fileName !== selectedTab);
       return dedupeById([...others, ...rows]);
     });
+
+    // Forza il focus sulla riga finale anche se era già in vista
     setPendingJumpId(`${selectedTab}:${total}`);
   }
 
@@ -626,7 +625,6 @@ export function useLogState() {
     handleLoadMoreTop: loadMoreUp,
     currentTotal: resolvedTotal,
     isLargeProvider,
-    // fixed start/end
     jumpToStart,
     jumpToEnd,
   };
