@@ -1,10 +1,10 @@
 const DB_NAME = "logchopper-db";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_LOGS = "logs";
 const STORE_META = "meta";
 
 export type IdbLogLine = {
-  id: string;
+  id: string; // fileName:lineNumber
   fileName: string;
   lineNumber: number;
   content: string;
@@ -24,7 +24,19 @@ function openDB(): Promise<IDBDatabase> {
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE_LOGS)) {
-        db.createObjectStore(STORE_LOGS, { keyPath: "id" });
+        const store = db.createObjectStore(STORE_LOGS, { keyPath: "id" });
+        store.createIndex("by_file_line", ["fileName", "lineNumber"], { unique: true });
+        store.createIndex("by_file", "fileName", { unique: false });
+      } else {
+        const store = req.transaction?.objectStore(STORE_LOGS);
+        if (store) {
+          if (!store.indexNames.contains("by_file_line")) {
+            store.createIndex("by_file_line", ["fileName", "lineNumber"], { unique: true });
+          }
+          if (!store.indexNames.contains("by_file")) {
+            store.createIndex("by_file", "fileName", { unique: false });
+          }
+        }
       }
       if (!db.objectStoreNames.contains(STORE_META)) {
         db.createObjectStore(STORE_META);
@@ -58,7 +70,7 @@ export async function idbClearAll() {
 }
 
 export async function idbSaveState(state: IdbState) {
-  // Pulisci e salva atomico abbastanza (due transazioni separate per semplicità)
+  // Per retrocompat: manteniamo questa API, ma ora preferiamo append/get per range.
   await idbClearAll();
 
   // Salva logs
@@ -76,9 +88,9 @@ export async function idbSaveState(state: IdbState) {
     });
   }
 
-  // Salva meta (pinned, files, maxLines) in singola chiave
+  // Salva meta
   {
-    const { db, tx, obj } = await txStore(STORE_META, "readwrite");
+    const { tx, obj } = await txStore(STORE_META, "readwrite");
     obj.put(state.pinnedIds, "pinnedIds");
     obj.put(state.files, "files");
     obj.put(state.maxLines, "maxLines");
@@ -93,19 +105,7 @@ export async function idbSaveState(state: IdbState) {
 export async function idbLoadState(): Promise<IdbState | null> {
   const db = await openDB();
 
-  // carica logs
-  const allLines: IdbLogLine[] = await new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_LOGS, "readonly");
-    const store = tx.objectStore(STORE_LOGS);
-    const req = store.getAll();
-    req.onsuccess = () => resolve(req.result as IdbLogLine[]);
-    req.onerror = () => reject(req.error);
-  });
-
-  // se vuoto, niente stato
-  if (!allLines || allLines.length === 0) return null;
-
-  // carica meta
+  // Recupera meta
   const [pinnedIds, files, maxLines] = await Promise.all([
     new Promise<string[]>((resolve) => {
       const tx = db.transaction(STORE_META, "readonly");
@@ -130,7 +130,8 @@ export async function idbLoadState(): Promise<IdbState | null> {
     }),
   ]);
 
-  return { allLines, pinnedIds, files, maxLines };
+  // Per compat, restituiamo allLines vuoto (d’ora in poi useremo letture per range)
+  return { allLines: [], pinnedIds, files, maxLines };
 }
 
 export async function idbUpdatePinned(pinnedIds: string[]) {
@@ -141,4 +142,69 @@ export async function idbUpdatePinned(pinnedIds: string[]) {
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
   });
+}
+
+export async function idbSetFilesMeta(files: { fileName: string; totalLines: number }[]) {
+  const { tx, obj } = await txStore(STORE_META, "readwrite");
+  obj.put(files, "files");
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+export async function idbGetFilesMeta(): Promise<{ fileName: string; totalLines: number }[]> {
+  const { tx, obj } = await txStore(STORE_META, "readonly");
+  return await new Promise((resolve) => {
+    const req = obj.get("files");
+    req.onsuccess = () => resolve((req.result as { fileName: string; totalLines: number }[]) || []);
+    req.onerror = () => resolve([]);
+  });
+}
+
+// Append batch di log
+export async function idbAppendLogs(lines: IdbLogLine[]) {
+  if (!lines.length) return;
+  const { tx, obj } = await txStore(STORE_LOGS, "readwrite");
+  for (const l of lines) obj.put(l);
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+// Legge un range per fileName e intervallo di lineNumber [from, to] inclusivo
+export async function idbGetLogsByRange(fileName: string, from: number, to: number): Promise<IdbLogLine[]> {
+  if (to < from) return [];
+  const db = await openDB();
+  const tx = db.transaction(STORE_LOGS, "readonly");
+  const store = tx.objectStore(STORE_LOGS);
+  const idx = store.index("by_file_line");
+  const keyRange = IDBKeyRange.bound([fileName, from], [fileName, to]);
+  const req = idx.getAll(keyRange);
+  return await new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve((req.result as IdbLogLine[]) || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// Ultime N righe di un file (per anteprima tail-first)
+export async function idbGetLastN(fileName: string, n: number): Promise<IdbLogLine[]> {
+  const meta = await idbGetFilesMeta();
+  const info = meta.find((m) => m.fileName === fileName);
+  if (!info || info.totalLines <= 0) return [];
+  const to = info.totalLines;
+  const from = Math.max(1, to - n + 1);
+  return idbGetLogsByRange(fileName, from, to);
+}
+
+// Aggiorna totale righe per file
+export async function idbUpdateFileTotal(fileName: string, totalLines: number) {
+  const list = await idbGetFilesMeta();
+  const idx = list.findIndex((f) => f.fileName === fileName);
+  if (idx >= 0) list[idx] = { fileName, totalLines };
+  else list.push({ fileName, totalLines });
+  await idbSetFilesMeta(list);
 }
