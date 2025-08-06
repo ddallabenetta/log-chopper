@@ -23,11 +23,9 @@ type Props = {
   pinnedIds?: string[];
   onJumpToId?: (id: string) => void;
   onJumpToLine?: (n: number) => void;
-  // Navigazione match su/giù e abilitazione
   onPrevMatch?: () => void;
   onNextMatch?: () => void;
   matchesEnabled?: boolean;
-  // nuovi
   onGoToStart?: () => void;
   onGoToEnd?: () => void;
 };
@@ -264,10 +262,10 @@ export default function LogControls({
             size="sm"
             className="h-8 gap-2 shadow hover:shadow-md transition-shadow"
             onClick={onGoToEnd}
-            title={t("go_bottom")}
+            title="Fine"
           >
             <ArrowDownToLine className="h-4 w-4" />
-            <span className="hidden sm:inline">{t("go_bottom")}</span>
+            <span className="hidden sm:inline">Fine</span>
           </Button>
         </div>
       </div>
