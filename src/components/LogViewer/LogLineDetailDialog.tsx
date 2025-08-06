@@ -9,7 +9,7 @@ import { Copy, Maximize2, Minimize2 } from "lucide-react";
 import { toast } from "sonner";
 import type { LogLine } from "./LogTypes";
 import JsonGraphViewer from "./JsonGraphViewer";
-import JsonPrettyViewer from "./JsonPrettyViewer";
+import JsonPrettyViewer, { JsonPrettyViewerHandle } from "./JsonPrettyViewer";
 
 type Props = {
   open: boolean;
@@ -105,6 +105,7 @@ function levelDotClass(level: LogLine["level"]) {
 export default function LogLineDetailDialog({ open, onOpenChange, line }: Props) {
   const [view, setView] = React.useState<"text" | "pretty" | "graph">("text");
   const [fullscreen, setFullscreen] = React.useState(false);
+  const prettyRef = React.useRef<JsonPrettyViewerHandle | null>(null);
 
   React.useEffect(() => {
     if (!open) return;
@@ -119,6 +120,16 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
 
   const copyToClipboard = async () => {
     if (!line) return;
+    // Se siamo in vista Pretty e abbiamo JSON, copia solo il JSON
+    if (view === "pretty" && extraction.kind !== "none") {
+      const jsonStr = prettyRef.current?.getFormattedJson?.() || (extraction as any).formatted || "";
+      if (jsonStr) {
+        await navigator.clipboard.writeText(jsonStr);
+        toast.success("JSON copiato");
+        return;
+      }
+    }
+    // Altrimenti copia il contenuto completo della riga (fallback)
     await navigator.clipboard.writeText(line.content);
     toast.success("Contenuto copiato");
   };
@@ -174,7 +185,6 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
                     </button>
                   </div>
                 )}
-                {/* Mostra sempre il pulsante per schermo intero, indipendentemente dalla vista */}
                 <Button
                   size="sm"
                   variant="outline"
@@ -187,7 +197,7 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
                 </Button>
                 <Button size="sm" variant="outline" onClick={copyToClipboard} className="gap-2">
                   <Copy className="h-4 w-4" />
-                  Copia
+                  {view === "pretty" && hasJson ? "Copia JSON" : "Copia"}
                 </Button>
               </div>
             </div>
@@ -233,6 +243,7 @@ export default function LogLineDetailDialog({ open, onOpenChange, line }: Props)
             {hasJson && view === "pretty" && (
               <div className={fullscreen ? "flex-1 min-h-0" : ""}>
                 <JsonPrettyViewer
+                  ref={prettyRef}
                   data={(extraction as any).parsed}
                   className={fullscreen ? "h-full" : "max-h-[60vh]"}
                   initiallyCollapsed={false}
