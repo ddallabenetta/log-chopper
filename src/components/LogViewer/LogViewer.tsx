@@ -73,12 +73,13 @@ export default function LogViewer() {
   const [pendingJumpId, setPendingJumpId] = React.useState<string | null>(null);
   const pendingOlderRef = React.useRef<LogLine[]>([]);
 
-  // Caricamento stato persistito: ripristina tutte le righe e non troncare per file
+  // Caricamento stato persistito: ripristina e ORDINA per fileName + lineNumber
   React.useEffect(() => {
     (async () => {
       setIsRestoring(true);
       const saved = await idbLoadState();
       if (saved) {
+        // Mappa a LogLine
         const restoredLines: LogLine[] = saved.allLines.map((l) => ({
           id: l.id,
           fileName: l.fileName,
@@ -86,8 +87,16 @@ export default function LogViewer() {
           content: l.content,
           level: (l.level as LogLevel) || "OTHER",
         }));
+
+        // ORDINE STABILE: per fileName asc, poi lineNumber asc (numerico)
+        restoredLines.sort((a, b) => {
+          if (a.fileName === b.fileName) return a.lineNumber - b.lineNumber;
+          return a.fileName.localeCompare(b.fileName);
+        });
+
         setAllLines(restoredLines);
 
+        // Ricostruisci files coerentemente (già ordinati per numero riga)
         const byFile = new Map<string, LogLine[]>();
         for (const l of restoredLines) {
           const arr = byFile.get(l.fileName);
@@ -96,7 +105,7 @@ export default function LogViewer() {
         }
         const restoredFiles: ParsedFile[] = Array.from(byFile.entries()).map(([fileName, lines]) => ({
           fileName,
-          lines, // nessun slice qui
+          lines,
           totalLines: lines.length,
         }));
         setFiles(restoredFiles);
