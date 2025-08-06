@@ -79,8 +79,7 @@ export default function LogControls({
     if (debouncedQuery !== filter.query) {
       onFilterChange({ ...filter, query: debouncedQuery });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedQuery]);
+  }, [debouncedQuery]); // eslint-disable-line react-hooks/exhaustive-deps
 
   React.useEffect(() => {
     setLocalQuery(filter.query);
@@ -128,8 +127,10 @@ export default function LogControls({
           <Button
             variant="default"
             onClick={() => fileInputRef.current?.click()}
-            className="whitespace-nowrap"
+            className="whitespace-nowrap gap-2"
+            title={t("upload_logs")}
           >
+            <Upload className="h-4 w-4" />
             {t("upload_logs")}
           </Button>
         </div>
