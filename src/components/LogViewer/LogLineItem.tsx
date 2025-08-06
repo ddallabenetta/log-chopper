@@ -68,7 +68,7 @@ export default function LogLineItem({
 
   return (
     <>
-      <div className={["px-3", expanded ? "py-2" : "py-1.5"].join(" ")}>
+      <div className={["px-3 cursor-pointer select-none", expanded ? "py-2" : "py-1.5"].join(" ")}>
         <div className={["flex items-start gap-3", expanded ? "" : "items-center"].join(" ")}>
           {/* Meta + Toggle espansione */}
           <div className="shrink-0 basis-56 max-w-[50%] text-xs text-muted-foreground tabular-nums font-mono overflow-hidden text-ellipsis">
@@ -76,7 +76,10 @@ export default function LogLineItem({
               <button
                 className="h-5 w-5 grid place-items-center rounded hover:bg-accent/60"
                 title={expanded ? "Comprimi" : "Espandi"}
-                onClick={() => onToggleExpanded?.(line.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleExpanded?.(line.id);
+                }}
               >
                 {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
               </button>
@@ -96,6 +99,7 @@ export default function LogLineItem({
               expanded ? "whitespace-pre-wrap break-words" : "whitespace-nowrap overflow-hidden text-ellipsis"
             ].join(" ")}
             aria-label={`log-${line.id}`}
+            onClick={() => onToggleExpanded?.(line.id)}
           >
             {renderHighlighted(line.content)}
           </div>
@@ -105,7 +109,10 @@ export default function LogLineItem({
             <Button
               size="icon"
               variant={isPinned ? "default" : "ghost"}
-              onClick={() => onTogglePin(line.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onTogglePin(line.id);
+              }}
               title={isPinned ? "Rimuovi pin" : "Pin riga"}
             >
               {isPinned ? <Pin className="h-4 w-4" /> : <PinOff className="h-4 w-4" />}
@@ -114,7 +121,10 @@ export default function LogLineItem({
               size="icon"
               variant="outline"
               title="Dettaglio riga"
-              onClick={() => setDetailOpen(true)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setDetailOpen(true);
+              }}
             >
               <Info className="h-4 w-4" />
             </Button>

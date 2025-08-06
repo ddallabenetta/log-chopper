@@ -84,7 +84,6 @@ export default function LogList({
 }: Props) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
 
-  // Stato espansione per riga
   const [expandedMap, setExpandedMap] = React.useState<Map<string, boolean>>(() => new Map());
   const toggleExpanded = React.useCallback((id: string) => {
     setExpandedMap((prev) => {
@@ -109,7 +108,6 @@ export default function LogList({
     });
   }, [lines, matcher, pinned, showOnlyPinned, passesLevel]);
 
-  // Altezza base riga in modalità compatta; se espansa diventa auto.
   const ROW_H = 34;
   const OVERSCAN = 12;
 
@@ -215,9 +213,6 @@ export default function LogList({
     };
   }, []);
 
-  // Nota: con righe espandibili l’altezza reale varia.
-  // Manteniamo virtualizzazione semplice usando ROW_H come base; l’overscan elevato evita salti
-  // quando alcune righe sono espanse.
   const total = filtered.length;
   const startIndex = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
   const visibleCount = Math.max(0, Math.ceil((viewportH || 1) / ROW_H) + OVERSCAN * 2);
@@ -252,21 +247,32 @@ export default function LogList({
         ) : (
           <div>
             {topPad > 0 && <div style={{ height: topPad }} />}
-            {slice.map((line) => {
+            {slice.map((line, i) => {
               const isLast = lastId === line.id;
               const expanded = expandedMap.get(line.id) === true;
+              const zebra = (startIndex + i) % 2 === 0 ? "bg-background" : "bg-accent/30";
               return (
                 <div
                   key={line.id}
                   data-row-id={line.id}
                   id={isLast ? "log-last-row" : undefined}
-                  className="bg-transparent"
+                  className={zebra}
                   style={{ minHeight: expanded ? undefined : ROW_H }}
+                  onClick={(e) => {
+                    // evita che click su bottoni azione espandano/comprimano
+                    const target = e.target as HTMLElement;
+                    if (target.closest("button")) return;
+                    toggleExpanded(line.id);
+                  }}
                 >
                   <MemoLineItem
                     line={line}
                     isPinned={pinned.has(line.id)}
-                    onTogglePin={onTogglePin}
+                    onTogglePin={(id) => {
+                      // fermiamo la propagazione per non innescare il toggle di riga
+                      // (in LogLineItem i bottoni già fanno stopPropagation; doppia sicurezza)
+                      onTogglePin(id);
+                    }}
                     highlightRanges={sliceHighlightMap.get(line.id) ?? []}
                     expanded={expanded}
                     onToggleExpanded={toggleExpanded}
