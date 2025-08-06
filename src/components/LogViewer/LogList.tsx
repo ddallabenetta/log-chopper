@@ -15,6 +15,9 @@ type Props = {
   onAfterJump?: () => void;
 };
 
+// Wrap memo per prevenire re-render non necessari degli item
+const MemoLineItem = React.memo(LogLineItem);
+
 function buildMatcher(filter: FilterConfig): ((text: string) => { match: boolean; ranges: { start: number; end: number }[] }) {
   if (!filter.query) {
     return () => ({ match: true, ranges: [] });
@@ -54,6 +57,26 @@ function buildMatcher(filter: FilterConfig): ((text: string) => { match: boolean
   };
 }
 
+// throttle semplice basato su rAF
+function useRafThrottle<T extends (...args: any[]) => void>(fn: T) {
+  const ref = React.useRef<number | null>(null);
+  const lastArgs = React.useRef<any[]>([]);
+  const saved = React.useRef(fn);
+  React.useEffect(() => {
+    saved.current = fn;
+  }, [fn]);
+
+  const throttled = React.useCallback((...args: any[]) => {
+    lastArgs.current = args;
+    if (ref.current != null) return;
+    ref.current = requestAnimationFrame(() => {
+      ref.current = null;
+      saved.current(...(lastArgs.current as any[]));
+    });
+  }, []);
+  return throttled as T;
+}
+
 export default function LogList({
   lines,
   pinned,
@@ -73,6 +96,7 @@ export default function LogList({
     [filter.level]
   );
 
+  // Filtro solo per id visibili; importante: evita di calcolare highlight qui
   const filtered = React.useMemo(() => {
     return lines.filter((l) => {
       if (showOnlyPinned) return pinned.has(l.id);
@@ -82,39 +106,38 @@ export default function LogList({
     });
   }, [lines, matcher, pinned, showOnlyPinned, passesLevel]);
 
-  const highlightMap = React.useMemo(() => {
-    const map = new Map<string, { start: number; end: number }[]>();
-    if (!showOnlyPinned || filter.query) {
-      for (const l of filtered) {
-        const { ranges } = matcher(l.content);
-        if (ranges.length > 0) map.set(l.id, ranges);
-      }
-    }
-    return map;
-  }, [filtered, matcher, showOnlyPinned, filter.query]);
-
-  // Virtualizzazione semplice: stimiamo un'altezza media riga e calcoliamo finestra visibile
-  const EST_ROW = 32; // altezza media per riga (px), può variare ma è un buon compromesso
-  const OVERSCAN = 12; // buffer sopra/sotto per scorrimenti fluidi
+  // Parametri virtualizzazione
+  const EST_ROW = 32; // altezza media pixel
+  const OVERSCAN = 12;
 
   const [scrollTop, setScrollTop] = React.useState(0);
   const [viewportH, setViewportH] = React.useState(0);
 
+  // Handlers throttled
+  const handleScroll = useRafThrottle(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    setScrollTop(el.scrollTop);
+  });
+  const handleResize = useRafThrottle(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    setViewportH(el.clientHeight);
+  });
+
   React.useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const onScroll = () => setScrollTop(el.scrollTop);
-    const onResize = () => setViewportH(el.clientHeight);
-    onResize();
-    el.addEventListener("scroll", onScroll);
-    window.addEventListener("resize", onResize);
+    handleResize();
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("resize", handleResize);
     return () => {
-      el.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onResize);
+      el.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("resize", handleResize);
     };
-  }, []);
+  }, [handleScroll, handleResize]);
 
-  // Scroll all'inizio: vai in fondo al primo popolamento
+  // Primo popolamento: scroll in fondo una volta
   const didInitScrollBottomRef = React.useRef(false);
   React.useEffect(() => {
     const el = containerRef.current;
@@ -127,7 +150,7 @@ export default function LogList({
     }
   }, [filtered.length]);
 
-  // Se arrivano nuove righe (incremento lunghezza), resta agganciato al fondo
+  // Segui il fondo quando arrivano nuove righe
   const prevLenRef = React.useRef(0);
   React.useEffect(() => {
     const el = containerRef.current;
@@ -143,18 +166,18 @@ export default function LogList({
     prevLenRef.current = filtered.length;
   }, [filtered.length]);
 
-  // Caricamento top-on-scroll (se fornito)
+  // Load more on top
   React.useEffect(() => {
     const el = containerRef.current;
     if (!el || !onLoadMoreTop) return;
-    const onScroll = () => {
+    const onScrollTop = () => {
       if (el.scrollTop < 50) onLoadMoreTop();
     };
-    el.addEventListener("scroll", onScroll);
-    return () => el.removeEventListener("scroll", onScroll);
+    el.addEventListener("scroll", onScrollTop, { passive: true });
+    return () => el.removeEventListener("scroll", onScrollTop);
   }, [onLoadMoreTop]);
 
-  // Jump a id
+  // Jump a ID
   React.useEffect(() => {
     if (!jumpToId) return;
     const el = containerRef.current;
@@ -167,7 +190,7 @@ export default function LogList({
     onAfterJump && onAfterJump();
   }, [jumpToId, onAfterJump]);
 
-  // Espone globalmente il container per lo scroll “Vai in fondo”
+  // Espone il container globalmente per “Vai in fondo”
   React.useEffect(() => {
     (window as any).__LOG_LIST_CONTAINER__ = containerRef.current;
   }, []);
@@ -181,8 +204,21 @@ export default function LogList({
   const topPad = startIndex * EST_ROW;
   const bottomPad = Math.max(0, (total - endIndex) * EST_ROW);
 
-  const slice = filtered.slice(startIndex, endIndex);
+  // Slice memoizzata per evitare remount frequenti
+  const slice = React.useMemo(() => filtered.slice(startIndex, endIndex), [filtered, startIndex, endIndex]);
   const lastId = slice.length > 0 ? slice[slice.length - 1]?.id : null;
+
+  // Calcola highlight SOLO per la slice visibile
+  const sliceHighlightMap = React.useMemo(() => {
+    const map = new Map<string, { start: number; end: number }[]>();
+    if (!showOnlyPinned || filter.query) {
+      for (const l of slice) {
+        const { ranges } = matcher(l.content);
+        if (ranges.length > 0) map.set(l.id, ranges);
+      }
+    }
+    return map;
+  }, [slice, matcher, showOnlyPinned, filter.query]);
 
   return (
     <div className="rounded border bg-card h-full min-h-0 flex flex-col">
@@ -209,11 +245,11 @@ export default function LogList({
                   id={isLast ? "log-last-row" : undefined}
                   style={{ minHeight: EST_ROW }}
                 >
-                  <LogLineItem
+                  <MemoLineItem
                     line={line}
                     isPinned={pinned.has(line.id)}
                     onTogglePin={onTogglePin}
-                    highlightRanges={highlightMap.get(line.id) ?? []}
+                    highlightRanges={sliceHighlightMap.get(line.id) ?? []}
                   />
                 </div>
               );
