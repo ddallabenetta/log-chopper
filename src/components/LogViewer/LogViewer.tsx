@@ -145,28 +145,58 @@ export default function LogViewer() {
 
   // Drag & Drop handlers su tutta l'area principale
   const dragCounterRef = React.useRef(0);
-  const onDragOver = (e: React.DragEvent) => {
-    // Permette il drop e previene l'apertura del file nel browser
+
+  const resetDragState = React.useCallback(() => {
+    dragCounterRef.current = 0;
+    setIsDragging(false);
+  }, [setIsDragging]);
+
+  React.useEffect(() => {
+    // In alcuni browser, uscendo dalla finestra con l'elemento trascinato non scatta dragleave:
+    // ascoltiamo eventi globali per ripulire lo stato.
+    const onDocDragEnd = () => resetDragState();
+    const onDocDrop = () => resetDragState();
+    const onDocEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") resetDragState();
+    };
+    document.addEventListener("dragend", onDocDragEnd);
+    document.addEventListener("drop", onDocDrop);
+    document.addEventListener("keydown", onDocEscape);
+    return () => {
+      document.removeEventListener("dragend", onDocDragEnd);
+      document.removeEventListener("drop", onDocDrop);
+      document.removeEventListener("keydown", onDocEscape);
+    };
+  }, [resetDragState]);
+
+  const onDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    e.dataTransfer.dropEffect = "copy";
+    // primo ingresso: mostra overlay
     if (dragCounterRef.current === 0) setIsDragging(true);
     dragCounterRef.current++;
   };
+
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+  };
+
   const onDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
     if (dragCounterRef.current === 0) setIsDragging(false);
   };
+
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    dragCounterRef.current = 0;
-    setIsDragging(false);
+    resetDragState();
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
-      // filtra a .log o text/plain, ma lascia comunque passare se l’utente forza
+      // filtra a .log o text/plain, ma accetta anche type vuoto (alcuni OS)
       const accepted = Array.from(files).filter(
         (f) => f.name.endsWith(".log") || f.type === "text/plain" || f.type === ""
       );
@@ -193,6 +223,7 @@ export default function LogViewer() {
       )}
       <CardContent
         className="flex-1 min-h-0 flex flex-col overflow-hidden p-0"
+        onDragEnter={onDragEnter}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
