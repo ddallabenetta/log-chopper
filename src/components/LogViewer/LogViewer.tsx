@@ -143,6 +143,41 @@ export default function LogViewer() {
     void jumpToEnd();
   };
 
+  // Drag & Drop handlers su tutta l'area principale
+  const dragCounterRef = React.useRef(0);
+  const onDragOver = (e: React.DragEvent) => {
+    // Permette il drop e previene l'apertura del file nel browser
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+    if (dragCounterRef.current === 0) setIsDragging(true);
+    dragCounterRef.current++;
+  };
+  const onDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+    if (dragCounterRef.current === 0) setIsDragging(false);
+  };
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
+    setIsDragging(false);
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      // filtra a .log o text/plain, ma lascia comunque passare se l’utente forza
+      const accepted = Array.from(files).filter(
+        (f) => f.name.endsWith(".log") || f.type === "text/plain" || f.type === ""
+      );
+      if (accepted.length === 0) {
+        toast.message("Nessun file valido. Trascina file .log o di testo.");
+        return;
+      }
+      void addFiles(accepted);
+    }
+  };
+
   return (
     <Card className="w-screen h-[calc(100vh-56px)] max-w-none rounded-none border-0 flex flex-col overflow-hidden">
       {isRestoring && (
@@ -156,7 +191,12 @@ export default function LogViewer() {
           `}</style>
         </div>
       )}
-      <CardContent className="flex-1 min-h-0 flex flex-col overflow-hidden p-0">
+      <CardContent
+        className="flex-1 min-h-0 flex flex-col overflow-hidden p-0"
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+      >
         <FileTabs
           tabs={tabsForRender}
           selected={selectedTab}
@@ -244,6 +284,8 @@ export default function LogViewer() {
             File importati: {ingestStats.length}
           </div>
         )}
+
+        {isDragging && <DragOverlay />}
       </CardContent>
     </Card>
   );
