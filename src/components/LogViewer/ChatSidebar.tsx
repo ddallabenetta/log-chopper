@@ -4,7 +4,9 @@ import * as React from "react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import ChatHeader from "./components/ChatHeader";
-import ChatSettings, { type CompressionConfig } from "./components/ChatSettings";
+import ChatSettings, {
+  type CompressionConfig,
+} from "./components/ChatSettings";
 import ChatMessages from "./components/ChatMessages";
 import type { LogLine, FilterConfig } from "./LogTypes";
 import { PanelRightOpen } from "lucide-react";
@@ -31,13 +33,27 @@ Guidelines:
 - If ambiguity exists, list hypotheses and what evidence would confirm/deny them.
 Output in Italian. Use bullet points and be concise.`;
 
-const PROVIDER_MODELS: Record<Exclude<Provider, "ollama">, { label: string; models: { id: string; label: string }[] }> = {
-  openai: { label: "OpenAI", models: [{ id: "gpt-4o-mini", label: "gpt-4o-mini" }, { id: "gpt-4.1-mini", label: "gpt-4.1-mini" }] },
-  deepseek: { label: "DeepSeek", models: [{ id: "deepseek-chat", label: "deepseek-chat" }, { id: "deepseek-reasoner", label: "deepseek-reasoner" }] },
+const PROVIDER_MODELS: Record<
+  Exclude<Provider, "ollama">,
+  { label: string; models: { id: string; label: string }[] }
+> = {
+  openai: {
+    label: "OpenAI",
+    models: [
+      { id: "gpt-4o-mini", label: "gpt-4o-mini" },
+      { id: "gpt-4.1-mini", label: "gpt-4.1-mini" },
+    ],
+  },
+  deepseek: {
+    label: "DeepSeek",
+    models: [
+      { id: "deepseek-chat", label: "deepseek-chat" },
+      { id: "deepseek-reasoner", label: "deepseek-reasoner" },
+    ],
+  },
   openrouter: {
     label: "OpenRouter",
     models: [
-      { id: "openrouter/horizon-beta", label: "openrouter/horizon-beta" },
       { id: "openrouter/auto", label: "auto" },
       { id: "anthropic/claude-3.5-sonnet", label: "claude-3.5-sonnet" },
       { id: "openai/gpt-4o-mini", label: "openai/gpt-4o-mini" },
@@ -45,7 +61,14 @@ const PROVIDER_MODELS: Record<Exclude<Provider, "ollama">, { label: string; mode
   },
 };
 
-export default function ChatSidebar({ lines, pinnedIds, className, open: openProp, onOpenChange, filter }: Props) {
+export default function ChatSidebar({
+  lines,
+  pinnedIds,
+  className,
+  open: openProp,
+  onOpenChange,
+  filter,
+}: Props) {
   // Controlled/uncontrolled
   const [openUncontrolled, setOpenUncontrolled] = React.useState(true);
   const open = openProp ?? openUncontrolled;
@@ -58,11 +81,15 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
   const [provider, setProvider] = React.useState<Provider>("openrouter");
   const [model, setModel] = React.useState<string>("openrouter/horizon-beta");
   const [apiKey, setApiKey] = React.useState<string>("");
-  const [ollamaEndpoint, setOllamaEndpoint] = React.useState<string>("http://localhost:11434");
+  const [ollamaEndpoint, setOllamaEndpoint] = React.useState<string>(
+    "http://localhost:11434",
+  );
 
   // Chat state
   const [input, setInput] = React.useState("");
-  const [messages, setMessages] = React.useState<Message[]>([{ role: "system", content: DEFAULT_SYSTEM_PROMPT }]);
+  const [messages, setMessages] = React.useState<Message[]>([
+    { role: "system", content: DEFAULT_SYSTEM_PROMPT },
+  ]);
   const [loading, setLoading] = React.useState(false);
   const [streamBuffer, setStreamBuffer] = React.useState<string>("");
 
@@ -92,7 +119,8 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     samplePerLevel: 40,
     includeStacks: true,
   };
-  const [compression, setCompression] = React.useState<CompressionConfig>(DEFAULT_COMPRESSION);
+  const [compression, setCompression] =
+    React.useState<CompressionConfig>(DEFAULT_COMPRESSION);
   const [enableCompression, setEnableCompression] = React.useState(true);
 
   // Helpers
@@ -100,10 +128,6 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     if (text.length <= maxChars) return text;
     const keep = Math.max(10, Math.floor((maxChars - 3) / 2));
     return text.slice(0, keep) + "..." + text.slice(-keep);
-  }
-  function serializeLine(content: string, meta: { level: string; fileName: string; lineNumber: number }, maxChars: number) {
-    const clipped = truncateMiddle(content, maxChars);
-    return `[${meta.level}] ${meta.fileName}:${meta.lineNumber} ${clipped}`;
   }
   function sampleArray<T>(arr: T[], max: number): T[] {
     if (arr.length <= max) return arr;
@@ -124,25 +148,57 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
   }
 
   const buildContextText = React.useCallback(() => {
+    function serializeLine(
+      content: string,
+      meta: { level: string; fileName: string; lineNumber: number },
+      maxChars: number,
+    ) {
+      const clipped = truncateMiddle(content, maxChars);
+      return `[${meta.level}] ${meta.fileName}:${meta.lineNumber} ${clipped}`;
+    }
+
     const pinnedSet = new Set(pinnedIds);
     const cfg = compression;
-    const pinned = lines.filter((l) => pinnedSet.has(l.id)).slice(-cfg.maxPinned);
-    const nonPinned = lines.filter((l) => !pinnedSet.has(l.id)).slice(-cfg.maxOthers);
+    const pinned = lines
+      .filter((l) => pinnedSet.has(l.id))
+      .slice(-cfg.maxPinned);
+    const nonPinned = lines
+      .filter((l) => !pinnedSet.has(l.id))
+      .slice(-cfg.maxOthers);
     const grouped = groupByKey(nonPinned, (l) => l.level);
     const sampled: typeof lines = [];
-    for (const lvl of ["ERROR", "WARN", "INFO", "DEBUG", "TRACE", "OTHER"] as const) {
+    for (const lvl of [
+      "ERROR",
+      "WARN",
+      "INFO",
+      "DEBUG",
+      "TRACE",
+      "OTHER",
+    ] as const) {
       const bucket = grouped.get(lvl) || [];
       sampled.push(...sampleArray(bucket, cfg.samplePerLevel));
     }
     const seen = new Set<string>();
     const ordered: typeof lines = [];
     const pushUnique = (arr: typeof lines) => {
-      for (const l of arr) if (!seen.has(l.id)) { seen.add(l.id); ordered.push(l); }
+      for (const l of arr)
+        if (!seen.has(l.id)) {
+          seen.add(l.id);
+          ordered.push(l);
+        }
     };
     pushUnique(pinned);
     pushUnique(sampled);
     const serialize = (arr: typeof lines) =>
-      arr.map((l) => serializeLine(l.content, { level: l.level, fileName: l.fileName, lineNumber: l.lineNumber }, cfg.maxLineChars)).join("\n");
+      arr
+        .map((l) =>
+          serializeLine(
+            l.content,
+            { level: l.level, fileName: l.fileName, lineNumber: l.lineNumber },
+            cfg.maxLineChars,
+          ),
+        )
+        .join("\n");
     return {
       pinnedText: serialize(pinned),
       otherText: serialize(ordered.filter((l) => !pinnedSet.has(l.id))),
@@ -159,33 +215,49 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     ollamaEndpoint?: string;
     abortSignal?: AbortSignal;
   }): Promise<string> {
-    const { provider, model, apiKey, messages, ollamaEndpoint, abortSignal } = params;
+    const { provider, model, apiKey, messages, ollamaEndpoint, abortSignal } =
+      params;
     const body = { model, messages, temperature: 0.2 };
 
     if (provider === "openai") {
       const key = apiKey || (process.env.OPENAI_API_KEY as string | undefined);
-      if (!key) throw new Error("OPENAI_API_KEY mancante. Inserisci la chiave nel pannello.");
+      if (!key)
+        throw new Error(
+          "OPENAI_API_KEY mancante. Inserisci la chiave nel pannello.",
+        );
       const res = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
-        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(body),
         signal: abortSignal,
       });
-      if (!res.ok) throw new Error(`OpenAI error: ${res.status} ${await res.text()}`);
+      if (!res.ok)
+        throw new Error(`OpenAI error: ${res.status} ${await res.text()}`);
       const data = await res.json();
       return data.choices?.[0]?.message?.content ?? "";
     }
 
     if (provider === "deepseek") {
-      const key = apiKey || (process.env.DEEPSEEK_API_KEY as string | undefined);
-      if (!key) throw new Error("DEEPSEEK_API_KEY mancante. Inserisci la chiave nel pannello.");
+      const key =
+        apiKey || (process.env.DEEPSEEK_API_KEY as string | undefined);
+      if (!key)
+        throw new Error(
+          "DEEPSEEK_API_KEY mancante. Inserisci la chiave nel pannello.",
+        );
       const res = await fetch("https://api.deepseek.com/chat/completions", {
         method: "POST",
-        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(body),
         signal: abortSignal,
       });
-      if (!res.ok) throw new Error(`DeepSeek error: ${res.status} ${await res.text()}`);
+      if (!res.ok)
+        throw new Error(`DeepSeek error: ${res.status} ${await res.text()}`);
       const data = await res.json();
       return data.choices?.[0]?.message?.content ?? "";
     }
@@ -195,23 +267,36 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
       const res = await fetch(`${endpoint.replace(/\/$/, "")}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model, messages: messages.map((m) => ({ role: m.role, content: m.content })), stream: false }),
+        body: JSON.stringify({
+          model,
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          stream: false,
+        }),
         signal: abortSignal,
       });
-      if (!res.ok) throw new Error(`Ollama error: ${res.status} ${await res.text()}`);
+      if (!res.ok)
+        throw new Error(`Ollama error: ${res.status} ${await res.text()}`);
       const data = await res.json();
       return data?.message?.content ?? "";
     }
 
-    const key = apiKey || (process.env.OPENROUTER_API_KEY as string | undefined);
-    if (!key) throw new Error("OPENROUTER_API_KEY mancante. Inserisci la chiave nel pannello.");
+    const key =
+      apiKey || (process.env.OPENROUTER_API_KEY as string | undefined);
+    if (!key)
+      throw new Error(
+        "OPENROUTER_API_KEY mancante. Inserisci la chiave nel pannello.",
+      );
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify(body),
       signal: abortSignal,
     });
-    if (!res.ok) throw new Error(`OpenRouter error: ${res.status} ${await res.text()}`);
+    if (!res.ok)
+      throw new Error(`OpenRouter error: ${res.status} ${await res.text()}`);
     const data = await res.json();
     return data.choices?.[0]?.message?.content ?? "";
   }
@@ -235,7 +320,10 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
       if (!raw) return;
       const parsed = JSON.parse(raw) as Partial<SavedConfig>;
 
-      if (parsed.provider && ["openai", "deepseek", "openrouter", "ollama"].includes(parsed.provider)) {
+      if (
+        parsed.provider &&
+        ["openai", "deepseek", "openrouter", "ollama"].includes(parsed.provider)
+      ) {
         setProvider(parsed.provider as Provider);
       }
       if (typeof parsed.model === "string" && parsed.model.trim()) {
@@ -244,16 +332,34 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
       if (typeof parsed.apiKey === "string") {
         setApiKey(parsed.apiKey);
       }
-      if (typeof parsed.ollamaEndpoint === "string" && parsed.ollamaEndpoint.trim()) {
+      if (
+        typeof parsed.ollamaEndpoint === "string" &&
+        parsed.ollamaEndpoint.trim()
+      ) {
         setOllamaEndpoint(parsed.ollamaEndpoint);
       }
       if (parsed.compression) {
         setCompression({
-          maxPinned: typeof parsed.compression.maxPinned === "number" ? parsed.compression.maxPinned : 120,
-          maxOthers: typeof parsed.compression.maxOthers === "number" ? parsed.compression.maxOthers : 180,
-          maxLineChars: typeof parsed.compression.maxLineChars === "number" ? parsed.compression.maxLineChars : 220,
-          samplePerLevel: typeof parsed.compression.samplePerLevel === "number" ? parsed.compression.samplePerLevel : 40,
-          includeStacks: typeof parsed.compression.includeStacks === "boolean" ? parsed.compression.includeStacks : true,
+          maxPinned:
+            typeof parsed.compression.maxPinned === "number"
+              ? parsed.compression.maxPinned
+              : 120,
+          maxOthers:
+            typeof parsed.compression.maxOthers === "number"
+              ? parsed.compression.maxOthers
+              : 180,
+          maxLineChars:
+            typeof parsed.compression.maxLineChars === "number"
+              ? parsed.compression.maxLineChars
+              : 220,
+          samplePerLevel:
+            typeof parsed.compression.samplePerLevel === "number"
+              ? parsed.compression.samplePerLevel
+              : 40,
+          includeStacks:
+            typeof parsed.compression.includeStacks === "boolean"
+              ? parsed.compression.includeStacks
+              : true,
         });
         setEnableCompression(true);
       }
@@ -305,16 +411,24 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     if (!q) return;
     if (showSettings) setShowSettings(false);
 
-    setMessages((prev) => [...prev.filter((m) => m.role !== "system"), { role: "user", content: q }]);
+    setMessages((prev) => [
+      ...prev.filter((m) => m.role !== "system"),
+      { role: "user", content: q },
+    ]);
     setInput("");
     setLoading(true);
     setStreamBuffer("");
 
-    const { pinnedText, otherText, totalPinned, totalOthers } = buildContextText();
+    const { pinnedText, otherText, totalPinned, totalOthers } =
+      buildContextText();
     const userContent = [
       "Contesto log (pinned prioritari):",
-      totalPinned > 0 ? `-- PINNED (${totalPinned}) --\n${pinnedText}` : "-- PINNED (0) --",
-      totalOthers > 0 ? `-- ALTRI (${totalOthers}) --\n${otherText}` : "-- ALTRI (0) --",
+      totalPinned > 0
+        ? `-- PINNED (${totalPinned}) --\n${pinnedText}`
+        : "-- PINNED (0) --",
+      totalOthers > 0
+        ? `-- ALTRI (${totalOthers}) --\n${otherText}`
+        : "-- ALTRI (0) --",
       "",
       "Domanda:",
       q,
@@ -327,10 +441,19 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
     ];
 
     try {
-      const content = await callLLM({ provider, model, apiKey, messages: nextMessages, ollamaEndpoint });
+      const content = await callLLM({
+        provider,
+        model,
+        apiKey,
+        messages: nextMessages,
+        ollamaEndpoint,
+      });
       const finalContent = content || (streamBuffer ? streamBuffer : "");
       if (finalContent) {
-        setMessages((prev) => [...prev, { role: "assistant", content: finalContent }]);
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: finalContent },
+        ]);
         setStreamBuffer("");
       }
     } catch (err: unknown) {
@@ -338,10 +461,10 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
         provider === "ollama"
           ? "Verifica che l'endpoint Ollama sia raggiungibile e che il modello esista."
           : provider === "openai"
-          ? "Controlla la API Key e i limiti del modello selezionato."
-          : provider === "deepseek"
-          ? "Controlla la API Key DeepSeek e il modello selezionato."
-          : "Controlla la API Key OpenRouter e il modello selezionato.";
+            ? "Controlla la API Key e i limiti del modello selezionato."
+            : provider === "deepseek"
+              ? "Controlla la API Key DeepSeek e il modello selezionato."
+              : "Controlla la API Key OpenRouter e il modello selezionato.";
       const message = err instanceof Error ? err.message : String(err);
       const errorReply = [
         "Si è verificato un errore durante la generazione della risposta.",
@@ -353,14 +476,20 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
         `- Modello: ${model}`,
         `- ${hint}`,
       ].join("\n");
-      setMessages((prev) => [...prev, { role: "assistant", content: errorReply }]);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: errorReply },
+      ]);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className={cn("h-full flex flex-col border-l bg-transparent", className)} style={{ width: open ? 460 : 56 }}>
+    <div
+      className={cn("h-full flex flex-col border-l bg-transparent", className)}
+      style={{ width: open ? 460 : 56 }}
+    >
       <div className="p-2 h-full">
         {open ? (
           <Card className="h-full flex flex-col overflow-hidden">
@@ -411,7 +540,7 @@ export default function ChatSidebar({ lines, pinnedIds, className, open: openPro
                 "bg-background text-foreground",
                 "shadow-sm hover:bg-accent hover:text-accent-foreground",
                 "transition-colors focus:outline-none",
-                "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
               ].join(" ")}
               aria-label="Apri chat"
             >

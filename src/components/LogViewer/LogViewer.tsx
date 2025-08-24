@@ -2,6 +2,9 @@
 
 import * as React from "react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import LogControls from "./LogControls";
 import LogList from "./LogList";
@@ -20,9 +23,7 @@ export default function LogViewer() {
     files,
     filter,
     showOnlyPinned,
-    maxLines,
     isDragging,
-    ingesting,
     ingestStats,
     isRestoring,
     pendingJumpId,
@@ -42,13 +43,9 @@ export default function LogViewer() {
     clearAll,
     togglePin,
     handleLoadMoreTop,
-    onChangeMaxLines,
     onJumpToId,
     addEmptyTab,
-    pageSize,
-    setPageSize,
-    loadMoreUp,
-    loadMoreDown,
+    addTextTab,
     jumpToLine,
     currentTotal,
     isLargeProvider,
@@ -58,6 +55,8 @@ export default function LogViewer() {
 
   const [ready, setReady] = React.useState(false);
   const [chatOpen, setChatOpen] = React.useState<boolean>(true);
+  const [showPasteDialog, setShowPasteDialog] = React.useState(false);
+  const [pasteText, setPasteText] = React.useState('');
 
   React.useEffect(() => {
     try {
@@ -78,8 +77,14 @@ export default function LogViewer() {
   }, [chatOpen, ready]);
 
   const onNewTab = () => {
-    const id = addEmptyTab();
+    setShowPasteDialog(true);
+  };
+
+  const handleCreateTab = (withText?: string) => {
+    const id = withText ? addTextTab(withText) : addEmptyTab();
     setSelectedTab(id);
+    setShowPasteDialog(false);
+    setPasteText('');
   };
 
   const handleCloseTab = (id: string) => {
@@ -93,7 +98,6 @@ export default function LogViewer() {
     closeFileTab(id);
   };
 
-  const tabsForRender: FileTab[] = fileTabs;
 
   const showEmptyHint =
     selectedTab !== ALL_TAB_ID &&
@@ -131,16 +135,34 @@ export default function LogViewer() {
 
   const currentMatchId = matchIndex >= 0 ? matchIds[matchIndex] : null;
 
-  const handleGoToStart = () => {
-    if (selectedTab === ALL_TAB_ID) return;
-    void jumpToStart();
+  const handleGoToStart = async () => {
+    if (selectedTab === ALL_TAB_ID) {
+      // For ALL tab, scroll to top using direct DOM manipulation
+      const container = (window as any).__LOG_LIST_CONTAINER__;
+      if (container) {
+        container.scrollTo({ top: 0, behavior: "smooth" });
+      }
+      return;
+    }
+    try {
+      await jumpToStart();
+    } catch (error) {
+      console.error("Failed to jump to start:", error);
+      toast.error("Impossibile andare all'inizio del file");
+    }
   };
-  const handleGoToEnd = () => {
+
+  const handleGoToEnd = async () => {
     if (selectedTab === ALL_TAB_ID) {
       (window as any).__LOG_LIST_SCROLL_TO_BOTTOM__?.();
       return;
     }
-    void jumpToEnd();
+    try {
+      await jumpToEnd();
+    } catch (error) {
+      console.error("Failed to jump to end:", error);
+      toast.error("Impossibile andare alla fine del file");
+    }
   };
 
   // Drag & Drop handlers su tutta l'area principale
@@ -229,7 +251,7 @@ export default function LogViewer() {
         onDrop={onDrop}
       >
         <FileTabs
-          tabs={tabsForRender}
+          tabs={fileTabs}
           selected={selectedTab}
           onSelect={setSelectedTab}
           onClose={handleCloseTab}
@@ -267,8 +289,6 @@ export default function LogViewer() {
         </div>
 
         <div className="flex-1 min-h-0 rounded-none relative overflow-hidden flex">
-          {false && <div />} {/* placeholder to keep structure stable */}
-
           <div className="flex-1 min-w-0 overflow-hidden flex relative">
             <div className="flex-1 min-w-0 overflow-auto relative">
               {showEmptyHint ? (
@@ -318,6 +338,41 @@ export default function LogViewer() {
 
         {isDragging && <DragOverlay />}
       </CardContent>
+
+      <Dialog open={showPasteDialog} onOpenChange={setShowPasteDialog}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Nuova Tab</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm text-muted-foreground mb-2">
+                Incolla qui il testo del log da analizzare, oppure lascia vuoto per creare una tab vuota.
+              </p>
+              <Textarea
+                placeholder="Incolla qui il contenuto del log..."
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                className="min-h-[200px] font-mono text-sm"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPasteDialog(false)}>
+              Annulla
+            </Button>
+            <Button onClick={() => handleCreateTab()}>
+              Tab Vuota
+            </Button>
+            <Button 
+              onClick={() => handleCreateTab(pasteText.trim() || undefined)}
+              disabled={!pasteText.trim()}
+            >
+              Crea con Testo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

@@ -80,10 +80,23 @@ function useHeightsBatch() {
   const [heights, setHeights] = React.useState<Map<string, number>>(() => new Map());
   const pendingRef = React.useRef<Map<string, number>>(new Map());
   const rafRef = React.useRef<number | null>(null);
+  const lastFlushTime = React.useRef<number>(0);
 
   const flush = React.useCallback(() => {
     rafRef.current = null;
     if (pendingRef.current.size === 0) return;
+    
+    // Throttle flushes for better performance with large datasets
+    const now = performance.now();
+    const timeSinceLastFlush = now - lastFlushTime.current;
+    
+    if (timeSinceLastFlush < 16 && pendingRef.current.size < 10) {
+      // Delay if too frequent and batch size is small
+      rafRef.current = requestAnimationFrame(flush);
+      return;
+    }
+    
+    lastFlushTime.current = now;
     setHeights((prev) => {
       let changed = false;
       const next = new Map(prev);
@@ -118,7 +131,7 @@ function useHeightsBatch() {
   return { heights, queueHeight: queue };
 }
 
-function MeasuredRow({
+const MeasuredRow = React.memo(function MeasuredRow({
   line,
   isPinned,
   onTogglePin,
@@ -172,7 +185,7 @@ function MeasuredRow({
       />
     </div>
   );
-}
+});
 
 export default function LogList({
   lines,
@@ -220,7 +233,8 @@ export default function LogList({
   }, [matchIds, onMatchesChange]);
 
   const ESTIMATE = 34;
-  const OVERSCAN = 8;
+  const OVERSCAN = 15; // Increased from 8 for smoother scrolling
+  const SCROLL_THRESHOLD = 80; // Increased from 40 for better large file handling
 
   const { heights, queueHeight } = useHeightsBatch();
 
@@ -231,6 +245,8 @@ export default function LogList({
   const [scrollTop, setScrollTop] = React.useState(0);
   const [viewportH, setViewportH] = React.useState(0);
   const [followBottom, setFollowBottom] = React.useState(true);
+  const [isScrolling, setIsScrolling] = React.useState(false);
+  const scrollTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
   const handleScroll = useRafThrottle(() => {
     const el = containerRef.current;
@@ -238,6 +254,15 @@ export default function LogList({
     setScrollTop(el.scrollTop);
     const atBottom = el.scrollHeight - (el.scrollTop + el.clientHeight) <= 24;
     setFollowBottom(atBottom);
+    
+    // Track scrolling state for performance optimizations
+    setIsScrolling(true);
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+    }
+    scrollTimeoutRef.current = setTimeout(() => {
+      setIsScrolling(false);
+    }, 150);
   });
 
   const handleResize = useRafThrottle(() => {
@@ -256,6 +281,9 @@ export default function LogList({
     return () => {
       el.removeEventListener("scroll", handleScroll);
       window.removeEventListener("resize", handleResize);
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
     };
   }, [handleScroll, handleResize]);
 
@@ -295,7 +323,7 @@ export default function LogList({
     if (!el || !onLoadMoreTop) return;
     const onScrollTop = () => {
       if (loadingTopRef.current) return;
-      if (el.scrollTop <= 40) {
+      if (el.scrollTop <= SCROLL_THRESHOLD) {
         loadingTopRef.current = true;
         Promise.resolve(onLoadMoreTop()).finally(() => {
           requestAnimationFrame(() => {
@@ -313,13 +341,56 @@ export default function LogList({
     (window as any).__LOG_LIST_SCROLL_TO_BOTTOM__ = () => {
       const el = containerRef.current;
       if (!el) return;
-      const sentinel = el.querySelector("#log-bottom-sentinel") as HTMLElement | null;
-      if (sentinel) {
-        el.scrollTo({ top: sentinel.offsetTop - (el.clientHeight - sentinel.clientHeight), behavior: "smooth" });
-      } else {
-        el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-      }
+      
+      // Force scroll to absolute bottom
+      const maxScrollTop = el.scrollHeight - el.clientHeight;
+      el.scrollTo({ top: Math.max(0, maxScrollTop), behavior: "smooth" });
       setFollowBottom(true);
+      
+      // Fallback: try again after a short delay to ensure it worked
+      setTimeout(() => {
+        const currentMax = el.scrollHeight - el.clientHeight;
+        if (el.scrollTop < currentMax - 10) {
+          el.scrollTo({ top: Math.max(0, currentMax), behavior: "auto" });
+        }
+      }, 100);
+    };
+
+    // Add keyboard navigation for scroll
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const el = containerRef.current;
+      if (!el || !el.contains(document.activeElement)) return;
+      
+      switch (e.key) {
+        case "PageUp":
+          e.preventDefault();
+          el.scrollBy({ top: -el.clientHeight * 0.8, behavior: "smooth" });
+          setFollowBottom(false);
+          break;
+        case "PageDown":
+          e.preventDefault();
+          el.scrollBy({ top: el.clientHeight * 0.8, behavior: "smooth" });
+          break;
+        case "Home":
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            el.scrollTo({ top: 0, behavior: "smooth" });
+            setFollowBottom(false);
+          }
+          break;
+        case "End":
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+            setFollowBottom(true);
+          }
+          break;
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
 
@@ -348,23 +419,31 @@ export default function LogList({
     return Math.max(0, lo - 1);
   };
 
-  const startIndex = Math.max(0, findIndexForOffset(scrollTop) - 8);
+  const startIndex = Math.max(0, findIndexForOffset(scrollTop) - OVERSCAN);
 
+  // Optimize calculation for large datasets
   let y = prefixHeights[startIndex];
   let i = startIndex;
-  while (i < total && y < scrollTop + viewportH) {
-    const id = filtered[i].id;
-    const h = heights.get(id) ?? ESTIMATE;
+  const targetY = scrollTop + viewportH + (OVERSCAN * ESTIMATE);
+  while (i < total && y < targetY) {
+    const id = filtered[i]?.id;
+    const h = id ? (heights.get(id) ?? ESTIMATE) : ESTIMATE;
     y += h;
     i++;
   }
-  const endIndex = Math.min(total, i + 8);
+  const endIndex = Math.min(total, i + OVERSCAN);
 
   const topPad = prefixHeights[startIndex];
   const bottomPad = totalHeight - prefixHeights[endIndex];
 
   const slice = React.useMemo(() => filtered.slice(startIndex, endIndex), [filtered, startIndex, endIndex]);
   const lastId = slice.length > 0 ? slice[slice.length - 1]?.id : null;
+
+  // Scroll position indicator
+  const scrollProgress = React.useMemo(() => {
+    if (totalHeight <= viewportH) return 1;
+    return Math.min(1, Math.max(0, scrollTop / (totalHeight - viewportH)));
+  }, [scrollTop, totalHeight, viewportH]);
 
   const sliceHighlightMap = React.useMemo(() => {
     const map = new Map<string, { start: number; end: number }[]>();
@@ -383,13 +462,41 @@ export default function LogList({
     if (!el) return;
 
     let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 5;
 
     const tryScroll = () => {
-      if (cancelled) return;
+      if (cancelled || attempts >= maxAttempts) return;
+      attempts++;
+
       const target = el.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(jumpToId)}"]`);
       if (target) {
-        const top = target.offsetTop - el.clientHeight / 2;
-        el.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+        const targetRect = target.getBoundingClientRect();
+        const containerRect = el.getBoundingClientRect();
+        
+        // Better centering calculation
+        const targetTop = target.offsetTop;
+        const centerOffset = el.clientHeight / 2 - targetRect.height / 2;
+        const newScrollTop = Math.max(0, Math.min(targetTop - centerOffset, el.scrollHeight - el.clientHeight));
+        
+        el.scrollTo({ 
+          top: newScrollTop, 
+          behavior: attempts === 1 ? "smooth" : "auto" // Smooth only on first attempt
+        });
+        
+        // Disable auto-follow during jump
+        setFollowBottom(false);
+        
+        // Highlight the target row briefly
+        target.style.transition = "background-color 0.3s ease";
+        target.style.backgroundColor = "rgba(59, 130, 246, 0.2)";
+        setTimeout(() => {
+          target.style.backgroundColor = "";
+          setTimeout(() => {
+            target.style.transition = "";
+          }, 300);
+        }, 1000);
+        
         onAfterJump && onAfterJump();
         return;
       }
@@ -397,8 +504,14 @@ export default function LogList({
       const idx = filtered.findIndex((l) => l.id === jumpToId);
       if (idx >= 0) {
         const approxTop = prefixHeights[idx] - el.clientHeight / 2;
-        el.scrollTo({ top: Math.max(0, approxTop) });
-        requestAnimationFrame(tryScroll);
+        const clampedTop = Math.max(0, Math.min(approxTop, el.scrollHeight - el.clientHeight));
+        el.scrollTo({ top: clampedTop });
+        setFollowBottom(false);
+        
+        // Wait a bit longer for virtual scrolling to catch up
+        setTimeout(() => {
+          if (!cancelled) requestAnimationFrame(tryScroll);
+        }, 50);
       } else {
         onAfterJump && onAfterJump();
       }
@@ -411,11 +524,26 @@ export default function LogList({
   }, [jumpToId, filtered, prefixHeights, onAfterJump]);
 
   return (
-    <div className="rounded border bg-card h-full min-h-0 flex flex-col">
+    <div className="rounded border bg-card h-full min-h-0 flex flex-col relative">
+      {/* Scroll position indicator */}
+      {filtered.length > 50 && (
+        <div className="absolute right-2 top-2 z-10 bg-background/80 backdrop-blur-sm border rounded px-2 py-1 text-xs text-muted-foreground">
+          {Math.round(scrollProgress * 100)}% • {Math.ceil((startIndex + endIndex) / 2)} / {filtered.length}
+        </div>
+      )}
+      
       <div
         ref={containerRef}
-        className="flex-1 min-h-0 overflow-auto"
-        style={{ contain: "content", willChange: "transform" }}
+        className="flex-1 min-h-0 overflow-auto scroll-smooth focus:outline-none"
+        tabIndex={0}
+        role="log"
+        aria-label="Log entries"
+        style={{ 
+          contain: "layout style paint", 
+          willChange: isScrolling ? "scroll-position" : "auto",
+          // Better scrolling performance hints
+          scrollBehavior: isScrolling ? "auto" : "smooth"
+        }}
       >
         {filtered.length === 0 ? (
           <div className="p-6 text-sm text-muted-foreground">{t("no_results")}</div>

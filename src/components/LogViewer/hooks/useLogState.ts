@@ -19,6 +19,8 @@ const LS_PAGE_SIZE = "logviewer.pageSize.v1";
 
 let emptyTabCounter = 1;
 
+const { detectLevel } = require("./log-helpers") as typeof import("./log-helpers");
+
 export function useLogState() {
   const [files, setFiles] = React.useState<ParsedFile[]>([]);
   const [allLines, setAllLines] = React.useState<LogLine[]>([]);
@@ -101,6 +103,29 @@ export function useLogState() {
       if (prev.some((f) => f.fileName === id)) return prev;
       return [...prev, { fileName: id, lines: [], totalLines: 0 }];
     });
+    return id;
+  }, []);
+
+  const addTextTab = React.useCallback((text: string) => {
+    const id = `Testo-${emptyTabCounter++}`;
+    const lines = text.split('\n').map((content, i) => ({
+      id: `${id}:${i + 1}`,
+      fileName: id,
+      lineNumber: i + 1,
+      content,
+      level: detectLevel(content),
+    })) as LogLine[];
+
+    setFiles((prev) => {
+      if (prev.some((f) => f.fileName === id)) return prev;
+      return [...prev, { fileName: id, lines: [], totalLines: lines.length }];
+    });
+
+    setAllLines((prev) => {
+      const others = prev.filter((l) => l.fileName !== id);
+      return dedupeById([...others, ...lines]);
+    });
+
     return id;
   }, []);
 
@@ -221,7 +246,6 @@ export function useLogState() {
     setSelectedTab(id);
   };
 
-  const { detectLevel } = require("./log-helpers") as typeof import("./log-helpers");
 
   const togglePin = (id: string) => {
     const target = allLines.find((l) => l.id === id);
@@ -308,66 +332,132 @@ export function useLogState() {
   }
 
   async function jumpToLine(n: number) {
-    if (selectedTab === ALL_TAB_ID) return;
+    if (selectedTab === ALL_TAB_ID) {
+      // For ALL tab, try to find the line in current data
+      const targetLine = allLines.find(l => l.lineNumber === n);
+      if (targetLine) {
+        setPendingJumpId(targetLine.id);
+        return;
+      }
+      throw new Error(`Riga ${n} non trovata nel tab "Tutti"`);
+    }
+    
     const prov = providersRef.current.get(selectedTab);
-    if (!prov) return;
+    if (!prov) {
+      throw new Error("Provider not found for selected tab");
+    }
 
-    const total = await prov.totalLines();
-    if (total <= 0) return;
+    try {
+      const total = await prov.totalLines();
+      if (total <= 0) {
+        throw new Error("File appears to be empty");
+      }
 
-    const target = Math.max(1, Math.min(total, Math.floor(n)));
-    const half = Math.floor(pageSize / 2);
-    const from = Math.max(1, target - half);
-    const to = Math.min(total, from + pageSize - 1);
-    const rows = await prov.range(from, to);
-    if (!rows.length) return;
+      const target = Math.max(1, Math.min(total, Math.floor(n)));
+      
+      // Validate target line number
+      if (target !== n) {
+        throw new Error(`Riga ${n} non valida. Il file ha ${total} righe.`);
+      }
+      
+      const half = Math.floor(pageSize / 2);
+      const from = Math.max(1, target - half);
+      const to = Math.min(total, from + pageSize - 1);
+      const rows = await prov.range(from, to);
+      
+      if (!rows.length) {
+        throw new Error(`Impossibile caricare le righe attorno alla riga ${target}`);
+      }
 
-    setAllLines((prev) => {
-      const others = prev.filter((l) => l.fileName !== selectedTab);
-      return dedupeById([...others, ...rows]);
-    });
+      setAllLines((prev) => {
+        const others = prev.filter((l) => l.fileName !== selectedTab);
+        return dedupeById([...others, ...rows]);
+      });
 
-    setPendingJumpId(`${selectedTab}:${target}`);
+      // Use setTimeout to ensure DOM has updated before jumping
+      setTimeout(() => {
+        setPendingJumpId(`${selectedTab}:${target}`);
+      }, 50);
+      
+    } catch (error) {
+      console.error("jumpToLine error:", error);
+      throw error;
+    }
   }
 
   async function jumpToStart() {
     if (selectedTab === ALL_TAB_ID) return;
     const prov = providersRef.current.get(selectedTab);
-    if (!prov) return;
-    const total = await prov.totalLines();
-    if (total <= 0) return;
-    const from = 1;
-    const to = Math.min(total, pageSize);
-    const rows = await prov.range(from, to);
-    if (!rows.length) return;
+    if (!prov) {
+      throw new Error("Provider not found for selected tab");
+    }
+    
+    try {
+      const total = await prov.totalLines();
+      if (total <= 0) {
+        throw new Error("File appears to be empty");
+      }
+      
+      const from = 1;
+      const to = Math.min(total, pageSize);
+      const rows = await prov.range(from, to);
+      
+      if (!rows.length) {
+        throw new Error("Failed to load lines from start of file");
+      }
 
-    setAllLines((prev) => {
-      const others = prev.filter((l) => l.fileName !== selectedTab);
-      return dedupeById([...others, ...rows]);
-    });
+      setAllLines((prev) => {
+        const others = prev.filter((l) => l.fileName !== selectedTab);
+        return dedupeById([...others, ...rows]);
+      });
 
-    setPendingJumpId(`${selectedTab}:1`);
+      // Use setTimeout to ensure DOM has updated before jumping
+      setTimeout(() => {
+        setPendingJumpId(`${selectedTab}:1`);
+      }, 50);
+      
+    } catch (error) {
+      console.error("jumpToStart error:", error);
+      throw error;
+    }
   }
 
-  // Stabilizzato: carica sempre la finestra finale e forza il jump esplicito all’ultima riga
+  // Stabilizzato: carica sempre la finestra finale e forza il jump esplicito all'ultima riga
   async function jumpToEnd() {
     if (selectedTab === ALL_TAB_ID) return;
     const prov = providersRef.current.get(selectedTab);
-    if (!prov) return;
-    const total = await prov.totalLines();
-    if (total <= 0) return;
-    const to = total;
-    const from = Math.max(1, to - pageSize + 1);
-    const rows = await prov.range(from, to);
-    if (!rows.length) return;
+    if (!prov) {
+      throw new Error("Provider not found for selected tab");
+    }
+    
+    try {
+      const total = await prov.totalLines();
+      if (total <= 0) {
+        throw new Error("File appears to be empty");
+      }
+      
+      const to = total;
+      const from = Math.max(1, to - pageSize + 1);
+      const rows = await prov.range(from, to);
+      
+      if (!rows.length) {
+        throw new Error("Failed to load lines from end of file");
+      }
 
-    setAllLines((prev) => {
-      const others = prev.filter((l) => l.fileName !== selectedTab);
-      return dedupeById([...others, ...rows]);
-    });
+      setAllLines((prev) => {
+        const others = prev.filter((l) => l.fileName !== selectedTab);
+        return dedupeById([...others, ...rows]);
+      });
 
-    // Forza il focus sulla riga finale anche se era già in vista
-    setPendingJumpId(`${selectedTab}:${total}`);
+      // Use setTimeout to ensure DOM has updated before jumping
+      setTimeout(() => {
+        setPendingJumpId(`${selectedTab}:${total}`);
+      }, 50);
+      
+    } catch (error) {
+      console.error("jumpToEnd error:", error);
+      throw error;
+    }
   }
 
   const onJumpToId = (id: string) => setPendingJumpId(id);
@@ -580,7 +670,7 @@ export function useLogState() {
     if (selectedTab === ALL_TAB_ID) return false;
     const prov = providersRef.current.get(selectedTab);
     return prov?.kind === "large";
-  }, [selectedTab, providersRef.current.size]);
+  }, [selectedTab]);
 
   const onChangeMaxLines = (val: number) => {
     const v = Math.max(1000, Math.min(500000, Math.floor(val)));
@@ -617,6 +707,7 @@ export function useLogState() {
     onChangeMaxLines,
     onJumpToId,
     addEmptyTab,
+    addTextTab,
     pageSize,
     setPageSize,
     loadMoreUp,

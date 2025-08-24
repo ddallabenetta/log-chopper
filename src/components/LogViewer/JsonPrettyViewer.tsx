@@ -66,7 +66,7 @@ function ValueToken({ value, query }: { value: unknown; query: string }) {
   const t = getType(value);
   if (t === "string") {
     const s = String(value);
-    return <span className="text-green-600 dark:text-green-400 break-words">"{highlightText(s, query)}"</span>;
+    return <span className="text-green-600 dark:text-green-400 break-words">&quot;{highlightText(s, query)}&quot;</span>;
   }
   if (t === "number") {
     const s = String(value);
@@ -109,7 +109,7 @@ function CollapsibleNode({ value, depth, k, indent, initiallyCollapsed, query }:
             {collapsed ? "▶" : "▼"}
           </button>
           {k !== undefined && (
-            <span className="text-sky-700 dark:text-sky-300 break-words">"{highlightText(k, query)}"</span>
+            <span className="text-sky-700 dark:text-sky-300 break-words">&quot;{highlightText(k, query)}&quot;</span>
           )}
           {k !== undefined && <span className="text-muted-foreground">: </span>}
           <Bracket ch="{" depth={depth} />
@@ -156,7 +156,7 @@ function CollapsibleNode({ value, depth, k, indent, initiallyCollapsed, query }:
           </button>
           {k !== undefined && (
             <>
-              <span className="text-sky-700 dark:text-sky-300 break-words">"{highlightText(k, query)}"</span>
+              <span className="text-sky-700 dark:text-sky-300 break-words">&quot;{highlightText(k, query)}&quot;</span>
               <span className="text-muted-foreground">: </span>
             </>
           )}
@@ -192,7 +192,7 @@ function CollapsibleNode({ value, depth, k, indent, initiallyCollapsed, query }:
     <div className="leading-6">
       {k !== undefined && (
         <>
-          <span className="text-sky-700 dark:text-sky-300 break-words">"{highlightText(k, query)}"</span>
+          <span className="text-sky-700 dark:text-sky-300 break-words">&quot;{highlightText(k, query)}&quot;</span>
           <span className="text-muted-foreground">: </span>
         </>
       )}

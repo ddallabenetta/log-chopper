@@ -22,12 +22,12 @@ type Props = {
   onFilesSelected: (files: FileList) => void;
   pinnedIds?: string[];
   onJumpToId?: (id: string) => void;
-  onJumpToLine?: (n: number) => void;
+  onJumpToLine?: (n: number) => Promise<void> | void;
   onPrevMatch?: () => void;
   onNextMatch?: () => void;
   matchesEnabled?: boolean;
-  onGoToStart?: () => void;
-  onGoToEnd?: () => void;
+  onGoToStart?: () => Promise<void> | void;
+  onGoToEnd?: () => Promise<void> | void;
 };
 
 const LEVEL_OPTIONS = (t: (k: string) => string): Array<{ label: string; value: FilterConfig["level"] }> => [
@@ -69,11 +69,13 @@ export default function LogControls({
 }: Props) {
   const { t } = useI18n();
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const searchInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const [localQuery, setLocalQuery] = React.useState(filter.query);
   const debouncedQuery = useDebouncedValue(localQuery, 200);
 
   const [jumpLine, setJumpLine] = React.useState<string>("");
+  const [isJumping, setIsJumping] = React.useState<boolean>(false);
 
   React.useEffect(() => {
     if (debouncedQuery !== filter.query) {
@@ -84,6 +86,19 @@ export default function LogControls({
   React.useEffect(() => {
     setLocalQuery(filter.query);
   }, [filter.query]);
+
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const handleFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -106,10 +121,24 @@ export default function LogControls({
     return Array.from(s).sort();
   }, [pinnedIds]);
 
-  const triggerJump = () => {
+  const triggerJump = async () => {
     const n = Number(jumpLine);
-    if (!Number.isFinite(n) || n <= 0) return;
-    onJumpToLine?.(Math.floor(n));
+    if (!Number.isFinite(n) || n <= 0) {
+      toast.error("Inserisci un numero di riga valido");
+      return;
+    }
+    
+    setIsJumping(true);
+    try {
+      await onJumpToLine?.(Math.floor(n));
+      setJumpLine(""); // Clear the input after successful jump
+      toast.success(`Saltato alla riga ${Math.floor(n)}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Errore durante il salto alla riga";
+      toast.error(message);
+    } finally {
+      setIsJumping(false);
+    }
   };
 
   return (
@@ -138,6 +167,7 @@ export default function LogControls({
         <div className="flex-1 flex items-center gap-2">
           <div className="flex-1 flex items-center gap-2">
             <Input
+              ref={searchInputRef}
               placeholder={
                 filter.mode === "regex"
                   ? t("filter_regex_placeholder")
@@ -240,10 +270,24 @@ export default function LogControls({
               step={100}
               value={jumpLine}
               onChange={(e) => setJumpLine(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !isJumping) {
+                  e.preventDefault();
+                  void triggerJump();
+                }
+              }}
               className="h-8 w-28"
+              placeholder="es. 100"
+              disabled={isJumping}
             />
-            <Button variant="default" size="sm" className="h-8" onClick={triggerJump}>
-              Vai
+            <Button 
+              variant="default" 
+              size="sm" 
+              className="h-8" 
+              onClick={triggerJump}
+              disabled={isJumping}
+            >
+              {isJumping ? "..." : "Vai"}
             </Button>
           </div>
 
