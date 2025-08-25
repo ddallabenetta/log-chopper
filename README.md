@@ -1,47 +1,103 @@
-This is a Next.js project bootstrapped with create-next-app.
+```
+ ██       ██████   ██████       ██████ ██   ██  ██████  ██████  ██████  ███████ ██████  
+ ██      ██    ██ ██           ██      ██   ██ ██    ██ ██   ██ ██   ██ ██      ██   ██ 
+ ██      ██    ██ ██   ███     ██      ███████ ██    ██ ██████  ██████  █████   ██████  
+ ██      ██    ██ ██    ██     ██      ██   ██ ██    ██ ██      ██      ██      ██   ██ 
+ ███████  ██████   ██████       ██████ ██   ██  ██████  ██      ██      ███████ ██   ██ 
+```
 
-Scopo dell'app
-Una web app performante per l'analisi avanzata dei log (.log) con filtri, pin, visualizzazioni JSON avanzate e integrazione con l'AI per assistere nell'analisi (root cause, correlazioni, suggerimenti operativi).
+# 🪵 Log Chopper
 
-Avvio locale (dev)
-npm run dev
-# or
-yarn dev
-# or
+Una web app performante per l'analisi avanzata dei file di log (.log) con funzionalità di filtraggio, pinning, visualizzazione JSON e integrazione AI per assistere nell'analisi (root cause analysis, correlazioni e suggerimenti operativi).
+
+## ✨ Caratteristiche principali
+
+- 🔍 **Analisi avanzata dei log** con filtri dinamici e ricerca
+- 📌 **Pinning delle righe** importanti per riferimenti rapidi
+- 📊 **Visualizzazione JSON** strutturata per log complessi
+- 🤖 **Integrazione AI** per root cause analysis e correlazioni
+- ⚡ **Gestione file di grandi dimensioni** con indicizzazione ottimizzata
+- 📱 **Supporto PWA** per installazione su desktop e mobile
+- 🎨 **UI moderna** con componenti Shadcn/UI e dark mode
+
+## 🚀 Avvio rapido
+
+### Sviluppo locale
+
+```bash
+# Installa le dipendenze
+pnpm install
+
+# Avvia il server di sviluppo
 pnpm dev
-# or
-bun dev
+```
 
-Open http://localhost:3000 with your browser to see the result.
+Apri [http://localhost:3000](http://localhost:3000) nel browser per vedere l'applicazione.
 
-You can start editing the page by modifying app/page.tsx. The page auto-updates as you edit the file.
+### Build di produzione
 
-Production build
-npm run build && npm run start
+```bash
+pnpm build && pnpm start
+```
 
-Docker
-Build dell'immagine:
+## 🐳 Docker
+
+### Build dell'immagine
+
+```bash
 docker build -t log-chopper .
+```
 
-Esecuzione del container:
+### Esecuzione del container
+
+```bash
 docker run --name log-chopper-container -d -p 3000:3000 log-chopper
+```
 
-Questa configurazione espone l'app su http://localhost:3000.
+L'applicazione sarà disponibile su [http://localhost:3000](http://localhost:3000).
 
-Note
-- L'app utilizza Next.js (App Router), TypeScript, Tailwind e componenti Shadcn/UI.
-- Le funzionalità AI richiedono una chiave API del provider scelto (OpenAI, OpenRouter, DeepSeek o Ollama locale) configurabile dalla sidebar della chat.
-- È disponibile il supporto PWA con Service Worker e manifest per l'installazione su desktop/mobile.
+## 🛠️ Stack tecnologico
 
-Learn More
-To learn more about Next.js, take a look at the following resources:
+- **Framework**: Next.js 15 con App Router
+- **Linguaggio**: TypeScript
+- **Styling**: Tailwind CSS
+- **Componenti**: Shadcn/UI
+- **Storage**: IndexedDB per file di grandi dimensioni
+- **AI**: Supporto per OpenAI, OpenRouter, DeepSeek, Ollama
 
-- Next.js Documentation - learn about Next.js features and API.
-- Learn Next.js - an interactive Next.js tutorial.
+## ⚙️ Configurazione AI
 
-You can check out the Next.js GitHub repository - your feedback and contributions are welcome!
+Le funzionalità AI richiedono la configurazione di una chiave API. Provider supportati:
 
-Deploy on Vercel
-The easiest way to deploy your Next.js app is to use the Vercel Platform from the creators of Next.js.
+- **OpenAI** - Richiede API key OpenAI
+- **OpenRouter** - Richiede API key OpenRouter  
+- **DeepSeek** - Richiede API key DeepSeek
+- **Ollama** - Server locale (nessuna API key richiesta)
 
-Check out our Next.js deployment documentation for more details.
+Configura il provider dalla sidebar della chat nell'applicazione.
+
+## 📁 Struttura del progetto
+
+```
+src/
+├── app/                    # Next.js App Router
+├── components/
+│   ├── LogViewer/         # Componente principale per visualizzazione log
+│   ├── ChatSidebar/       # Assistente AI per analisi log
+│   ├── ui/                # Componenti UI Shadcn
+│   └── ...
+├── lib/                   # Utilità e configurazioni
+└── types/                 # Definizioni TypeScript
+```
+
+## 🤝 Contribuire
+
+1. Fork del repository
+2. Crea un branch per la tua feature (`git checkout -b feature/amazing-feature`)
+3. Commit delle modifiche (`git commit -m 'Add amazing feature'`)
+4. Push del branch (`git push origin feature/amazing-feature`)
+5. Apri una Pull Request
+
+## 📄 Licenza
+
+Questo progetto è distribuito sotto licenza MIT. Vedi il file `LICENSE` per i dettagli.
