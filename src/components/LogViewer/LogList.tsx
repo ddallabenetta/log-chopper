@@ -17,6 +17,8 @@ type Props = {
   onMatchesChange?: (matchIds: string[]) => void;
   // nuovo: id del match corrente da evidenziare
   currentMatchId?: string | null;
+  // stato ricerca per stabilizzare virtual scrolling
+  isSearching?: boolean;
 };
 
 const MemoLineItem = React.memo(LogLineItem);
@@ -76,22 +78,33 @@ function useRafThrottle<T extends (...args: any[]) => void>(fn: T) {
   return throttled as T;
 }
 
-function useHeightsBatch() {
+function useHeightsBatch(isSearching: boolean) {
   const [heights, setHeights] = React.useState<Map<string, number>>(() => new Map());
   const pendingRef = React.useRef<Map<string, number>>(new Map());
   const rafRef = React.useRef<number | null>(null);
   const lastFlushTime = React.useRef<number>(0);
+  const isSearchingRef = React.useRef(isSearching);
+  
+  React.useEffect(() => {
+    isSearchingRef.current = isSearching;
+  }, [isSearching]);
 
   const flush = React.useCallback(() => {
     rafRef.current = null;
     if (pendingRef.current.size === 0) return;
     
+    // Skip height updates during search to prevent flickering
+    if (isSearchingRef.current && pendingRef.current.size < 100) {
+      rafRef.current = requestAnimationFrame(flush);
+      return;
+    }
+    
     // Throttle flushes for better performance with large datasets
     const now = performance.now();
     const timeSinceLastFlush = now - lastFlushTime.current;
     
-    if (timeSinceLastFlush < 16 && pendingRef.current.size < 10) {
-      // Delay if too frequent and batch size is small
+    if (timeSinceLastFlush < 32 && pendingRef.current.size < 20) {
+      // More aggressive throttling to reduce flickering
       rafRef.current = requestAnimationFrame(flush);
       return;
     }
@@ -198,6 +211,7 @@ export default function LogList({
   onAfterJump,
   onMatchesChange,
   currentMatchId,
+  isSearching = false,
 }: Props) {
   const { t } = useI18n();
 
@@ -232,11 +246,7 @@ export default function LogList({
     onMatchesChange?.(matchIds);
   }, [matchIds, onMatchesChange]);
 
-  const ESTIMATE = 34;
-  const OVERSCAN = 15; // Increased from 8 for smoother scrolling
-  const SCROLL_THRESHOLD = 80; // Increased from 40 for better large file handling
-
-  const { heights, queueHeight } = useHeightsBatch();
+  const { heights, queueHeight } = useHeightsBatch(isSearching);
 
   const setHeight = React.useCallback((id: string, h: number) => {
     queueHeight(id, h);
@@ -247,6 +257,21 @@ export default function LogList({
   const [followBottom, setFollowBottom] = React.useState(true);
   const [isScrolling, setIsScrolling] = React.useState(false);
   const scrollTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  // Stabilize virtual scrolling during search
+  const [stableScrollTop, setStableScrollTop] = React.useState(0);
+  const [stableViewportH, setStableViewportH] = React.useState(0);
+  
+  React.useEffect(() => {
+    if (!isSearching) {
+      setStableScrollTop(scrollTop);
+      setStableViewportH(viewportH);
+    }
+  }, [scrollTop, viewportH, isSearching]);
+
+  const ESTIMATE = 34;
+  const OVERSCAN = isScrolling || isSearching ? 5 : 15; // Minimal overscan during search
+  const SCROLL_THRESHOLD = 80; // Increased from 40 for better large file handling
 
   const handleScroll = useRafThrottle(() => {
     const el = containerRef.current;
@@ -262,7 +287,7 @@ export default function LogList({
     }
     scrollTimeoutRef.current = setTimeout(() => {
       setIsScrolling(false);
-    }, 150);
+    }, 100); // Shorter timeout for quicker stabilization
   });
 
   const handleResize = useRafThrottle(() => {
@@ -419,19 +444,29 @@ export default function LogList({
     return Math.max(0, lo - 1);
   };
 
-  const startIndex = Math.max(0, findIndexForOffset(scrollTop) - OVERSCAN);
+  // Use stable values during search to prevent scrollbar jumping
+  const activeScrollTop = isSearching ? stableScrollTop : scrollTop;
+  const activeViewportH = isSearching ? stableViewportH : viewportH;
+  
+  const startIndex = Math.max(0, findIndexForOffset(activeScrollTop) - OVERSCAN);
 
-  // Optimize calculation for large datasets
+  // Optimize calculation for large datasets with stable bounds
   let y = prefixHeights[startIndex];
   let i = startIndex;
-  const targetY = scrollTop + viewportH + (OVERSCAN * ESTIMATE);
+  const overscanPixels = OVERSCAN * ESTIMATE;
+  const targetY = activeScrollTop + activeViewportH + overscanPixels;
+  
+  // More stable end index calculation to prevent flickering
   while (i < total && y < targetY) {
     const id = filtered[i]?.id;
     const h = id ? (heights.get(id) ?? ESTIMATE) : ESTIMATE;
     y += h;
     i++;
   }
-  const endIndex = Math.min(total, i + OVERSCAN);
+  
+  // Add minimum buffer to prevent frequent recalculation
+  const bufferLines = isScrolling ? 5 : OVERSCAN;
+  const endIndex = Math.min(total, i + bufferLines);
 
   const topPad = prefixHeights[startIndex];
   const bottomPad = totalHeight - prefixHeights[endIndex];
@@ -441,9 +476,9 @@ export default function LogList({
 
   // Scroll position indicator
   const scrollProgress = React.useMemo(() => {
-    if (totalHeight <= viewportH) return 1;
-    return Math.min(1, Math.max(0, scrollTop / (totalHeight - viewportH)));
-  }, [scrollTop, totalHeight, viewportH]);
+    if (totalHeight <= activeViewportH) return 1;
+    return Math.min(1, Math.max(0, activeScrollTop / (totalHeight - activeViewportH)));
+  }, [activeScrollTop, totalHeight, activeViewportH]);
 
   const sliceHighlightMap = React.useMemo(() => {
     const map = new Map<string, { start: number; end: number }[]>();

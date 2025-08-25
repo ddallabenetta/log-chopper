@@ -3,6 +3,7 @@
 import type { LogLine, LogLevel } from "../LogTypes";
 import { readRange, readTailPreview, getFileMetaTotal } from "./log-pagination";
 import { buildLargeFileIndex, type LargeFileIndex } from "./large-file-index";
+import { createOptimizedLargeHandler, OptimizedLargeFileHandler } from "./optimized-large-file-handler";
 import { detectLevel } from "./log-helpers";
 
 export type LineProvider =
@@ -20,6 +21,21 @@ export type LineProvider =
       totalLines: () => Promise<number>;
       tail: (n: number) => Promise<LogLine[]>;
       range: (from: number, to: number) => Promise<LogLine[]>;
+      dispose?: () => void;
+    }
+  | {
+      kind: "optimized-large";
+      fileName: string;
+      handler: OptimizedLargeFileHandler;
+      totalLines: () => Promise<number>;
+      tail: (n: number) => Promise<LogLine[]>;
+      range: (from: number, to: number) => Promise<LogLine[]>;
+      jumpToLine: (lineNumber: number, context?: number) => Promise<LogLine[]>;
+      searchStream: (query: string, options: {
+        mode: "text" | "regex";
+        caseSensitive: boolean;
+        maxResults?: number;
+      }) => AsyncGenerator<{matches: LogLine[], totalMatches: number, isComplete: boolean, progress: number}, void, unknown>;
       dispose?: () => void;
     };
 
@@ -71,5 +87,23 @@ export async function createLargeProvider(file: File): Promise<LineProvider> {
   };
 }
 
+// Factory per provider ottimizzato per file molto grandi
+export async function createOptimizedLargeProvider(file: File): Promise<LineProvider> {
+  const handler = await createOptimizedLargeHandler(file);
+
+  return {
+    kind: "optimized-large",
+    fileName: file.name,
+    handler,
+    totalLines: async () => (await handler.buildIndex()).totalLines,
+    tail: async (n) => handler.tail(n),
+    range: async (from, to) => handler.readLines(from, to),
+    jumpToLine: async (lineNumber, context) => handler.jumpToLine(lineNumber, context),
+    searchStream: (query, options) => handler.searchStream(query, options),
+    dispose: () => handler.dispose(),
+  };
+}
+
 // Heuristics
 export const LARGE_FILE_THRESHOLD = 50 * 1024 * 1024; // 50MB
+export const OPTIMIZED_LARGE_FILE_THRESHOLD = 500 * 1024 * 1024; // 500MB - per handler ottimizzato

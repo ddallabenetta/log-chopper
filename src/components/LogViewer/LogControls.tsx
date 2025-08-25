@@ -40,14 +40,6 @@ const LEVEL_OPTIONS = (t: (k: string) => string): Array<{ label: string; value: 
   { label: t("level_other"), value: "OTHER" },
 ];
 
-function useDebouncedValue<T>(value: T, delay = 200) {
-  const [debounced, setDebounced] = React.useState(value);
-  React.useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(id);
-  }, [value, delay]);
-  return debounced;
-}
 
 export default function LogControls({
   filter,
@@ -72,16 +64,15 @@ export default function LogControls({
   const searchInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const [localQuery, setLocalQuery] = React.useState(filter.query);
-  const debouncedQuery = useDebouncedValue(localQuery, 200);
+  const [hasUncommittedSearch, setHasUncommittedSearch] = React.useState(false);
 
   const [jumpLine, setJumpLine] = React.useState<string>("");
   const [isJumping, setIsJumping] = React.useState<boolean>(false);
 
+  // Track if local query differs from filter query
   React.useEffect(() => {
-    if (debouncedQuery !== filter.query) {
-      onFilterChange({ ...filter, query: debouncedQuery });
-    }
-  }, [debouncedQuery]); // eslint-disable-line react-hooks/exhaustive-deps
+    setHasUncommittedSearch(localQuery !== filter.query);
+  }, [localQuery, filter.query]);
 
   React.useEffect(() => {
     setLocalQuery(filter.query);
@@ -120,6 +111,21 @@ export default function LogControls({
     }
     return Array.from(s).sort();
   }, [pinnedIds]);
+
+  const commitSearch = () => {
+    if (localQuery !== filter.query) {
+      onFilterChange({ ...filter, query: localQuery });
+    }
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      commitSearch();
+    } else if (e.key === "Escape") {
+      setLocalQuery(filter.query); // Reset to last committed search
+    }
+  };
 
   const triggerJump = async () => {
     const n = Number(jumpLine);
@@ -166,16 +172,25 @@ export default function LogControls({
 
         <div className="flex-1 flex items-center gap-2">
           <div className="flex-1 flex items-center gap-2">
-            <Input
-              ref={searchInputRef}
-              placeholder={
-                filter.mode === "regex"
-                  ? t("filter_regex_placeholder")
-                  : t("filter_text_placeholder")
-              }
-              value={localQuery}
-              onChange={(e) => setLocalQuery(e.target.value)}
-            />
+            <div className="relative flex-1">
+              <Input
+                ref={searchInputRef}
+                placeholder={
+                  filter.mode === "regex"
+                    ? `${t("filter_regex_placeholder")} (Premi Enter per cercare)`
+                    : `${t("filter_text_placeholder")} (Premi Enter per cercare)`
+                }
+                value={localQuery}
+                onChange={(e) => setLocalQuery(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
+                className={hasUncommittedSearch ? "border-yellow-500 bg-yellow-50 dark:bg-yellow-950/20" : ""}
+              />
+              {hasUncommittedSearch && (
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-yellow-600 dark:text-yellow-400">
+                  Enter
+                </div>
+              )}
+            </div>
             <div className="flex items-center gap-1">
               <Button
                 size="icon"

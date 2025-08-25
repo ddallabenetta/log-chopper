@@ -24,8 +24,10 @@ export default function LogViewer() {
     filter,
     showOnlyPinned,
     isDragging,
+    ingesting,
     ingestStats,
     isRestoring,
+    isSearching,
     pendingJumpId,
     selectedTab,
     currentLines,
@@ -232,17 +234,37 @@ export default function LogViewer() {
 
   return (
     <Card className="w-screen h-[calc(100vh-56px)] max-w-none rounded-none border-0 flex flex-col overflow-hidden">
-      {isRestoring && (
-        <div className="w-full h-1 bg-secondary relative overflow-hidden">
-          <div className="absolute inset-0 animate-[shimmer_1.2s_linear_infinite] bg-gradient-to-r from-transparent via-primary/60 to-transparent" />
-          <style jsx>{`
-            @keyframes shimmer {
-              0% { transform: translateX(-100%); }
-              100% { transform: translateX(100%); }
-            }
-          `}</style>
+      {(isRestoring || ingesting) && (
+        <div className="w-full">
+          <div className="w-full h-1 bg-secondary relative overflow-hidden">
+            <div className="absolute inset-0 animate-[shimmer_1.2s_linear_infinite] bg-gradient-to-r from-transparent via-primary/60 to-transparent" />
+          </div>
+          {ingesting && (
+            <div className="bg-primary/10 border-b px-4 py-2 text-sm flex items-center gap-2">
+              <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
+              {ingestStats.length > 0 ? (
+                <span>
+                  Caricando file: {ingestStats.map(s => `${s.fileName} (${s.totalLines.toLocaleString()} righe)`).join(', ')}
+                </span>
+              ) : (
+                <span>Caricando file...</span>
+              )}
+            </div>
+          )}
+          {isRestoring && !ingesting && (
+            <div className="bg-primary/10 border-b px-4 py-2 text-sm flex items-center gap-2">
+              <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
+              <span>Ripristinando sessione precedente...</span>
+            </div>
+          )}
         </div>
       )}
+      <style jsx>{`
+        @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+      `}</style>
       <CardContent
         className="flex-1 min-h-0 flex flex-col overflow-hidden p-0"
         onDragEnter={onDragEnter}
@@ -312,6 +334,7 @@ export default function LogViewer() {
                   onAfterJump={() => setPendingJumpId(null)}
                   onMatchesChange={setMatchIds}
                   currentMatchId={currentMatchId}
+                  isSearching={isSearching}
                 />
               )}
             </div>

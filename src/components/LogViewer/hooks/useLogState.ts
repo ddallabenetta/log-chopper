@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import type { FilterConfig, LogLine, ParsedFile, LogLevel } from "../LogTypes";
 import { idbLoadState, idbUpdatePinned, idbClearAll, idbGetFilesMeta, idbDeleteFile, idbHasFile } from "@/lib/idb";
 import { dedupeById } from "./log-helpers";
-import { LARGE_FILE_THRESHOLD, createIdbProvider, createLargeProvider, type LineProvider } from "./line-provider";
+import { LARGE_FILE_THRESHOLD, OPTIMIZED_LARGE_FILE_THRESHOLD, createIdbProvider, createLargeProvider, createOptimizedLargeProvider, type LineProvider } from "./line-provider";
 
 export type FileIngestStats = {
   fileName: string;
@@ -34,6 +34,7 @@ export function useLogState() {
   const [ingesting, setIngesting] = React.useState(false);
   const [ingestStats, setIngestStats] = React.useState<FileIngestStats[]>([]);
   const [isRestoring, setIsRestoring] = React.useState(false);
+  const [isSearching, setIsSearching] = React.useState(false);
 
   const [pendingJumpId, setPendingJumpId] = React.useState<string | null>(null);
   const [selectedTab, setSelectedTab] = React.useState<string>(ALL_TAB_ID);
@@ -136,7 +137,23 @@ export function useLogState() {
 
     const newStats: FileIngestStats[] = [];
     for (const f of arr) {
-      if (f.size > LARGE_FILE_THRESHOLD) {
+      if (f.size > OPTIMIZED_LARGE_FILE_THRESHOLD) {
+        // File molto grandi: usa handler ottimizzato
+        const provider = await createOptimizedLargeProvider(f);
+        providersRef.current.set(f.name, provider);
+
+        const total = await provider.totalLines();
+        setFiles((prev) => upsertFile(prev, { fileName: f.name, lines: [], totalLines: total }));
+        const tail = await provider.tail(Math.min(pageSize, total));
+        setAllLines((prev) => {
+          const others = prev.filter((l) => l.fileName !== f.name);
+          return dedupeById([...others, ...tail]);
+        });
+
+        newStats.push({ fileName: f.name, totalLines: total, droppedLines: 0 });
+        toast.success(`File molto grande caricato con handler ottimizzato: ${f.name}`);
+      } else if (f.size > LARGE_FILE_THRESHOLD) {
+        // File grandi: usa handler standard  
         const provider = await createLargeProvider(f);
         providersRef.current.set(f.name, provider);
 
@@ -360,19 +377,37 @@ export function useLogState() {
         throw new Error(`Riga ${n} non valida. Il file ha ${total} righe.`);
       }
       
-      const half = Math.floor(pageSize / 2);
-      const from = Math.max(1, target - half);
-      const to = Math.min(total, from + pageSize - 1);
-      const rows = await prov.range(from, to);
-      
-      if (!rows.length) {
-        throw new Error(`Impossibile caricare le righe attorno alla riga ${target}`);
-      }
+      // Per provider ottimizzati, usa jumpToLine specializzato
+      if (prov.kind === "optimized-large") {
+        const context = Math.max(50, Math.min(pageSize / 4, 200));
+        const rows = await prov.jumpToLine(target, context);
+        
+        if (!rows.length) {
+          throw new Error(`Impossibile caricare le righe attorno alla riga ${target}`);
+        }
 
-      setAllLines((prev) => {
-        const others = prev.filter((l) => l.fileName !== selectedTab);
-        return dedupeById([...others, ...rows]);
-      });
+        setAllLines((prev) => {
+          const others = prev.filter((l) => l.fileName !== selectedTab);
+          return dedupeById([...others, ...rows]);
+        });
+
+        toast.success(`Navigazione rapida alla riga ${target}`);
+      } else {
+        // Comportamento originale per provider normali
+        const half = Math.floor(pageSize / 2);
+        const from = Math.max(1, target - half);
+        const to = Math.min(total, from + pageSize - 1);
+        const rows = await prov.range(from, to);
+        
+        if (!rows.length) {
+          throw new Error(`Impossibile caricare le righe attorno alla riga ${target}`);
+        }
+
+        setAllLines((prev) => {
+          const others = prev.filter((l) => l.fileName !== selectedTab);
+          return dedupeById([...others, ...rows]);
+        });
+      }
 
       // Use setTimeout to ensure DOM has updated before jumping
       setTimeout(() => {
@@ -494,6 +529,7 @@ export function useLogState() {
 
     if (!hasActiveFilter || selectedTab === ALL_TAB_ID) {
       scanRunIdRef.current++;
+      setIsSearching(false); // Assicurati che lo stato sia pulito
       return;
     }
 
@@ -502,13 +538,41 @@ export function useLogState() {
     let cancelled = false;
     const runId = ++scanRunIdRef.current;
 
-    (async () => {
-      const total = await prov.totalLines();
-      if (total <= 0) return;
+    // Per file molto grandi con handler ottimizzato, usa ricerca streaming
+    if (prov.kind === "optimized-large" && filter.query && filter.query.trim().length > 0) {
+      (async () => {
+        // Cancella eventuali toast precedenti
+        toast.dismiss(`search-${selectedTab}`);
+        
+        const searchGen = searchOptimizedLarge(filter.query, {
+          mode: filter.mode,
+          caseSensitive: filter.caseSensitive,
+          maxResults: 10000, // Limite ragionevole
+        });
 
-      const current = allLines.filter((l) => l.fileName === selectedTab);
-      let minLoaded = current.length ? current[0].lineNumber : Math.max(1, total - pageSize + 1);
-      let maxLoaded = current.length ? current[current.length - 1].lineNumber : total;
+        for await (const result of searchGen) {
+          if (cancelled || runId !== scanRunIdRef.current) return;
+          // I risultati sono già applicati tramite searchOptimizedLarge
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+        scanRunIdRef.current++;
+        toast.dismiss(`search-${selectedTab}`);
+      };
+    }
+
+    // Fallback al comportamento originale per file normali e grandi
+    (async () => {
+      setIsSearching(true);
+      try {
+        const total = await prov.totalLines();
+        if (total <= 0) return;
+
+        const current = allLines.filter((l) => l.fileName === selectedTab);
+        let minLoaded = current.length ? current[0].lineNumber : Math.max(1, total - pageSize + 1);
+        let maxLoaded = current.length ? current[current.length - 1].lineNumber : total;
 
       const BLOCK = Math.max(8000, Math.min(pageSize, 32000));
 
@@ -562,6 +626,9 @@ export function useLogState() {
         }
         dirUp = !dirUp;
         await new Promise((r) => setTimeout(r, 0));
+      }
+      } finally {
+        setIsSearching(false);
       }
     })();
 
@@ -672,6 +739,66 @@ export function useLogState() {
     return prov?.kind === "large";
   }, [selectedTab]);
 
+  const isOptimizedLargeProvider = React.useMemo<boolean>(() => {
+    if (selectedTab === ALL_TAB_ID) return false;
+    const prov = providersRef.current.get(selectedTab);
+    return prov?.kind === "optimized-large";
+  }, [selectedTab]);
+
+  // Funzione di ricerca ottimizzata per file molto grandi
+  const searchOptimizedLarge = React.useCallback(async function* (
+    query: string,
+    options: { mode: "text" | "regex"; caseSensitive: boolean; maxResults?: number }
+  ) {
+    if (selectedTab === ALL_TAB_ID) return;
+    const prov = providersRef.current.get(selectedTab);
+    if (!prov || prov.kind !== "optimized-large") return;
+
+    setIsSearching(true);
+    const searchGenerator = prov.searchStream(query, options);
+    let allMatches: LogLine[] = [];
+    
+    try {
+      for await (const result of searchGenerator) {
+      // Accumula tutti i risultati invece di sostituire ogni volta
+      if (result.matches.length > 0) {
+        allMatches = dedupeById([...allMatches, ...result.matches]);
+      }
+      
+      // Aggiorna solo quando la ricerca è completa per evitare scroll instabile
+      if (result.isComplete && allMatches.length > 0) {
+        setAllLines(prev => {
+          const others = prev.filter(l => l.fileName !== selectedTab);
+          return dedupeById([...others, ...allMatches]);
+        });
+      }
+      
+      // Mostra progresso per ricerche lunghe
+      if (!result.isComplete && result.progress > 0) {
+        toast.loading(`Ricerca: ${Math.round(result.progress * 100)}% - ${result.totalMatches} risultati`, {
+          id: `search-${selectedTab}`
+        });
+      } else if (result.isComplete) {
+        toast.dismiss(`search-${selectedTab}`);
+        if (result.totalMatches > 0) {
+          toast.success(`Trovati ${result.totalMatches} risultati`);
+        } else {
+          toast.info("Nessun risultato trovato");
+          // Se nessun risultato, mostra comunque le righe correnti
+          setAllLines(prev => {
+            const others = prev.filter(l => l.fileName !== selectedTab);
+            return others; // Solo righe di altri file
+          });
+        }
+      }
+      
+      yield result;
+      }
+    } finally {
+      setIsSearching(false);
+    }
+  }, [selectedTab]);
+
   const onChangeMaxLines = (val: number) => {
     const v = Math.max(1000, Math.min(500000, Math.floor(val)));
     setMaxLines(v);
@@ -688,6 +815,7 @@ export function useLogState() {
     ingesting,
     ingestStats,
     isRestoring,
+    isSearching,
     pendingJumpId,
     selectedTab,
     currentLines,
@@ -716,6 +844,8 @@ export function useLogState() {
     handleLoadMoreTop: loadMoreUp,
     currentTotal: resolvedTotal,
     isLargeProvider,
+    isOptimizedLargeProvider,
+    searchOptimizedLarge,
     jumpToStart,
     jumpToEnd,
   };
